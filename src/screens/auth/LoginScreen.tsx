@@ -10,7 +10,7 @@ export function LoginScreen() {
   const [password, setPassword] = useState('');
 
   return (
-    <ScreenContainer title="Đăng nhập hệ thống" subtitle="Sử dụng tài khoản users hiện có">
+    <ScreenContainer title="Đăng nhập" subtitle="Sử dụng tài khoản hiện có">
       <View style={styles.formGroup}>
         <Text style={styles.label}>Tên đăng nhập</Text>
         <TextInput
@@ -43,11 +43,11 @@ export function LoginScreen() {
 
 const styles = StyleSheet.create({
   formGroup: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   label: {
     marginBottom: 6,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
     color: APP_COLORS.textPrimary,
   },

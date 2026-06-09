@@ -12,7 +12,11 @@ export function ScreenContainer({ title, subtitle, children }: ScreenContainerPr
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        {subtitle ? (
+          <Text style={styles.subtitle} numberOfLines={2}>
+            {subtitle}
+          </Text>
+        ) : null}
         <View style={styles.body}>{children}</View>
       </View>
     </SafeAreaView>
@@ -27,20 +31,20 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
     color: APP_COLORS.textPrimary,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     marginTop: 4,
     color: APP_COLORS.textSecondary,
   },
   body: {
     flex: 1,
-    marginTop: 20,
+    marginTop: 14,
   },
 });

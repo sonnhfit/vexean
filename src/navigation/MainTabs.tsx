@@ -42,7 +42,7 @@ export function MainTabs() {
       <Tab.Screen
         name="Dashboard"
         component={DashboardScreen}
-        options={{ title: 'Bảng điều khiển', tabBarIcon: dashboardIcon }}
+        options={{ title: 'Trang chủ', tabBarIcon: dashboardIcon }}
       />
       <Tab.Screen
         name="Passengers"

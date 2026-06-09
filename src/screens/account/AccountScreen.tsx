@@ -13,7 +13,7 @@ export function AccountScreen() {
   const { signOut } = useAuth();
 
   return (
-    <ScreenContainer title="Tài khoản" subtitle="Thông tin tài khoản vận hành và quyền truy cập">
+    <ScreenContainer title="Tài khoản" subtitle="Hồ sơ và quyền truy cập">
       <View style={styles.buttonGroup}>
         <Button title="Xem hồ sơ" onPress={() => navigation.navigate('Profile')} color={APP_COLORS.primaryDark} />
       </View>
