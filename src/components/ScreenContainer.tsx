@@ -1,5 +1,6 @@
 import { PropsWithChildren } from 'react';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { APP_COLORS } from '../theme/colors';
 
 type ScreenContainerProps = PropsWithChildren<{
   title: string;
@@ -21,6 +22,7 @@ export function ScreenContainer({ title, subtitle, children }: ScreenContainerPr
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+    backgroundColor: APP_COLORS.background,
   },
   content: {
     flex: 1,
@@ -30,10 +32,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '700',
+    color: APP_COLORS.textPrimary,
   },
   subtitle: {
     fontSize: 14,
     marginTop: 4,
+    color: APP_COLORS.textSecondary,
   },
   body: {
     flex: 1,

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { useAuth } from '../../contexts/AuthContext';
+import { APP_COLORS } from '../../theme/colors';
 
 export function LoginScreen() {
   const { signIn } = useAuth();
@@ -30,7 +31,12 @@ export function LoginScreen() {
           placeholder="Nhập mật khẩu"
         />
       </View>
-      <Button title="Đăng nhập" onPress={signIn} disabled={!username || !password} />
+      <Button
+        title="Đăng nhập"
+        onPress={signIn}
+        disabled={!username || !password}
+        color={APP_COLORS.primaryDark}
+      />
     </ScreenContainer>
   );
 }
@@ -43,12 +49,16 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     fontSize: 14,
     fontWeight: '500',
+    color: APP_COLORS.textPrimary,
   },
   input: {
     borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    backgroundColor: APP_COLORS.surface,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
+    color: APP_COLORS.textPrimary,
   },
 });

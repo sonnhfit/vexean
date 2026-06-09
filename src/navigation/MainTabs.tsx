@@ -5,6 +5,7 @@ import { CargoScreen } from '../screens/main/CargoScreen';
 import { DashboardScreen } from '../screens/main/DashboardScreen';
 import { MaintenanceScreen } from '../screens/main/MaintenanceScreen';
 import { PassengersScreen } from '../screens/main/PassengersScreen';
+import { APP_COLORS } from '../theme/colors';
 import { MainTabParamList } from '../types/navigation';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -25,7 +26,19 @@ const accountIcon = createTabBarIcon('person-circle', 'person-circle-outline');
 
 export function MainTabs() {
   return (
-    <Tab.Navigator screenOptions={{ headerTitleAlign: 'center' }}>
+    <Tab.Navigator
+      screenOptions={{
+        headerTitleAlign: 'center',
+        headerStyle: { backgroundColor: APP_COLORS.primary },
+        headerTintColor: APP_COLORS.surface,
+        tabBarActiveTintColor: APP_COLORS.primary,
+        tabBarInactiveTintColor: APP_COLORS.textSecondary,
+        tabBarStyle: {
+          borderTopColor: APP_COLORS.border,
+          backgroundColor: APP_COLORS.surface,
+        },
+      }}
+    >
       <Tab.Screen
         name="Dashboard"
         component={DashboardScreen}

@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { APP_COLORS } from '../../theme/colors';
 
 export function ProfileScreen() {
   return (
@@ -16,11 +17,14 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   card: {
     borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    backgroundColor: APP_COLORS.primaryLight,
     borderRadius: 12,
     padding: 14,
   },
   row: {
     fontSize: 16,
     marginBottom: 8,
+    color: APP_COLORS.textPrimary,
   },
 });
