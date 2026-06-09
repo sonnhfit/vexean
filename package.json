@@ -19,8 +19,11 @@
     "react-native": "0.86.0",
     "react-native-gesture-handler": "^3.0.0",
     "react-native-maps": "^1.27.2",
+    "react-native-nitro-image": "^0.15.1",
+    "react-native-nitro-modules": "^0.35.9",
     "react-native-safe-area-context": "^5.5.2",
-    "react-native-screens": "^4.25.2"
+    "react-native-screens": "^4.25.2",
+    "react-native-vision-camera": "^4.7.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

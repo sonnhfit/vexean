@@ -1,5 +1,8 @@
-import { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useLayoutEffect, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Ionicons from '@react-native-vector-icons/ionicons';
+import { useNavigation } from '@react-navigation/native';
+import { QRScanModal } from '../../components/QRScanModal';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { APP_COLORS } from '../../theme/colors';
 
@@ -35,6 +38,22 @@ const toneColors = {
 
 export function CargoScreen() {
   const [refreshing, setRefreshing] = useState(false);
+  const [scanVisible, setScanVisible] = useState(false);
+  const navigation = useNavigation();
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          style={styles.scanHeaderBtn}
+          onPress={() => setScanVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="scan-outline" size={22} color={APP_COLORS.surface} />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -42,10 +61,11 @@ export function CargoScreen() {
   }, []);
 
   return (
-    <ScreenContainer
-      title="Hàng hoá"
-      subtitle="Ký gửi, COD và tiền ca theo thời gian thực"
-    >
+    <>
+      <ScreenContainer
+        title="Hàng hoá"
+        subtitle="Ký gửi, COD và tiền ca theo thời gian thực"
+      >
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
@@ -114,10 +134,27 @@ export function CargoScreen() {
         </View>
       </ScrollView>
     </ScreenContainer>
+
+    <QRScanModal
+      visible={scanVisible}
+      onClose={() => setScanVisible(false)}
+      onScanned={(value) => {
+        console.log('QR scanned:', value);
+      }}
+    />
+  </>
   );
 }
 
 const styles = StyleSheet.create({
+  scanHeaderBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
   contentContainer: {
     paddingBottom: 24,
     gap: 12,
