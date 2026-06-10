@@ -25,7 +25,7 @@ export function RootNavigator() {
           <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Hồ sơ cá nhân' }} />
         </>
       ) : (
-        <Stack.Screen name="Login" component={LoginScreen} options={{ title: 'Đăng nhập' }} />
+        <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
       )}
     </Stack.Navigator>
   );
