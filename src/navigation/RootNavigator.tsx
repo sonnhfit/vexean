@@ -1,3 +1,4 @@
+import { ActivityIndicator, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ProfileScreen } from '../screens/account/ProfileScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
@@ -9,7 +10,17 @@ import { MainTabs } from './MainTabs';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
-  const isAuthenticated = useAppSelector(state => Boolean(state.auth.accessToken));
+  const { hydrated, accessToken } = useAppSelector(state => state.auth);
+
+  if (!hydrated) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color={APP_COLORS.primaryDark} />
+      </View>
+    );
+  }
+
+  const isAuthenticated = Boolean(accessToken);
 
   return (
     <Stack.Navigator
@@ -30,3 +41,12 @@ export function RootNavigator() {
     </Stack.Navigator>
   );
 }
+
+const styles = {
+  loadingScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: APP_COLORS.background,
+  },
+} as const;

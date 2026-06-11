@@ -1,8 +1,11 @@
+import { useEffect } from 'react';
 import { StatusBar, useColorScheme } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider } from 'react-redux';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { bootstrapAuth } from './src/store/authSlice';
+import { useAppDispatch } from './src/store/hooks';
 import { store } from './src/store/store';
 import { APP_COLORS } from './src/theme/colors';
 
@@ -26,17 +29,29 @@ const darkNavigationTheme = {
   },
 };
 
+function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
+  const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    dispatch(bootstrapAuth());
+  }, [dispatch]);
+
+  return (
+    <SafeAreaProvider>
+      <NavigationContainer theme={isDarkMode ? darkNavigationTheme : lightNavigationTheme}>
+        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+        <RootNavigator />
+      </NavigationContainer>
+    </SafeAreaProvider>
+  );
+}
+
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
 
   return (
     <Provider store={store}>
-      <SafeAreaProvider>
-        <NavigationContainer theme={isDarkMode ? darkNavigationTheme : lightNavigationTheme}>
-          <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-          <RootNavigator />
-        </NavigationContainer>
-      </SafeAreaProvider>
+      <AppContent isDarkMode={isDarkMode} />
     </Provider>
   );
 }
