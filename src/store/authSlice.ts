@@ -121,6 +121,10 @@ export const signIn = createAsyncThunk<LoginPayload, SignInInput, { rejectValue:
   'auth/signIn',
   async ({ username, password }, { rejectWithValue }) => {
     try {
+      if (__DEV__) {
+        console.warn('[auth:signIn] start', { username });
+      }
+
       const loginResponse = await requestJson<Partial<LoginPayload>>('/api/users/token/', {
         method: 'POST',
         body: { username, password },
@@ -142,6 +146,10 @@ export const signIn = createAsyncThunk<LoginPayload, SignInInput, { rejectValue:
         user: loginResponse.user,
       };
     } catch (error) {
+      if (__DEV__) {
+        console.warn('[auth:signIn] failed', error instanceof Error ? { name: error.name, message: error.message } : error);
+      }
+
       if (error instanceof Error && error.name === 'ApiError') {
         return rejectWithValue(error.message);
       }

@@ -9,5 +9,6 @@ export type MainTabParamList = {
   Passengers: undefined;
   Cargo: undefined;
   Maintenance: undefined;
+  CallCenter: undefined;
   Account: undefined;
 };

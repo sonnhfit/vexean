@@ -70,6 +70,14 @@ function buildCurlCommand(url: string, init: RequestInit) {
   return parts.join(' ');
 }
 
+function logApi(message: string, payload: unknown) {
+  if (!__DEV__) {
+    return;
+  }
+
+  console.warn(message, payload);
+}
+
 async function getAuthHeader(auth: boolean | undefined) {
   if (!auth) {
     return undefined;
@@ -118,7 +126,7 @@ export async function requestJson<T>(pathOrUrl: string, options: ApiRequestOptio
   const { body, headers, logLabel, auth, ...rest } = options;
   const url = buildFullUrl(pathOrUrl);
 
-  const finalHeaders = new Headers(headers as HeadersInit | undefined);
+  const finalHeaders = new Headers(headers as Record<string, string> | undefined);
   finalHeaders.set('Accept', 'application/json');
 
   const authHeader = await getAuthHeader(auth);
@@ -126,12 +134,12 @@ export async function requestJson<T>(pathOrUrl: string, options: ApiRequestOptio
     finalHeaders.set('Authorization', authHeader);
   }
 
-  let finalBody: BodyInit | undefined;
+  let finalBody: RequestInit['body'] = undefined;
   if (isJsonBody(body)) {
     finalHeaders.set('Content-Type', 'application/json');
     finalBody = JSON.stringify(body);
   } else if (typeof body === 'string' || body instanceof FormData || body instanceof Blob || body instanceof ArrayBuffer || body instanceof URLSearchParams) {
-    finalBody = body;
+    finalBody = body as RequestInit['body'];
   }
 
   const requestInit: RequestInit = {
@@ -141,12 +149,12 @@ export async function requestJson<T>(pathOrUrl: string, options: ApiRequestOptio
   };
 
   const curlCommand = buildCurlCommand(url, requestInit);
-  console.log(`[api${logLabel ? `:${logLabel}` : ''}] request`, curlCommand);
+  logApi(`[api${logLabel ? `:${logLabel}` : ''}] request`, curlCommand);
 
   const response = await fetch(url, requestInit);
   const responseBody = await readResponseBody(response);
 
-  console.log(`[api${logLabel ? `:${logLabel}` : ''}] response`, {
+  logApi(`[api${logLabel ? `:${logLabel}` : ''}] response`, {
     url,
     status: response.status,
     ok: response.ok,
@@ -159,6 +167,11 @@ export async function requestJson<T>(pathOrUrl: string, options: ApiRequestOptio
         ? (responseBody as Record<string, string>).detail
         : undefined) ||
       `Request failed with status ${response.status}`;
+    logApi(`[api${logLabel ? `:${logLabel}` : ''}] error`, {
+      url,
+      status: response.status,
+      body: responseBody,
+    });
     throw new ApiError(message, response.status, responseBody);
   }
 

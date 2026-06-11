@@ -1,6 +1,8 @@
+import { ComponentProps } from 'react';
 import { BottomTabNavigationOptions, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { AccountScreen } from '../screens/account/AccountScreen';
+import { CallCenterScreen } from '../screens/main/CallCenterScreen';
 import { CargoScreen } from '../screens/main/CargoScreen';
 import { DashboardScreen } from '../screens/main/DashboardScreen';
 import { MaintenanceScreen } from '../screens/main/MaintenanceScreen';
@@ -10,7 +12,7 @@ import { MainTabParamList } from '../types/navigation';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-type IconName = keyof typeof Ionicons.glyphMap;
+type IconName = ComponentProps<typeof Ionicons>['name'];
 
 function createTabBarIcon(activeIcon: IconName, inactiveIcon: IconName): BottomTabNavigationOptions['tabBarIcon'] {
   return ({ color, size, focused }) => (
@@ -22,6 +24,7 @@ const dashboardIcon = createTabBarIcon('grid', 'grid-outline');
 const passengersIcon = createTabBarIcon('people', 'people-outline');
 const cargoIcon = createTabBarIcon('cube', 'cube-outline');
 const maintenanceIcon = createTabBarIcon('construct', 'construct-outline');
+const callCenterIcon = createTabBarIcon('headset', 'headset-outline');
 const accountIcon = createTabBarIcon('person-circle', 'person-circle-outline');
 
 export function MainTabs() {
@@ -58,6 +61,11 @@ export function MainTabs() {
         name="Maintenance"
         component={MaintenanceScreen}
         options={{ title: 'Bảo dưỡng', tabBarIcon: maintenanceIcon }}
+      />
+      <Tab.Screen
+        name="CallCenter"
+        component={CallCenterScreen}
+        options={{ title: 'Tổng Đài', tabBarIcon: callCenterIcon }}
       />
       <Tab.Screen
         name="Account"
