@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,15 +11,26 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
-import { useAuth } from '../../contexts/AuthContext';
+import { signIn } from '../../store/authSlice';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 
 export function LoginScreen() {
-  const { signIn } = useAuth();
+  const dispatch = useAppDispatch();
+  const { status, error } = useAppSelector(state => state.auth);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const canSubmit = Boolean(username && password);
+  const isLoading = status === 'loading';
+  const canSubmit = Boolean(username && password) && !isLoading;
+
+  const handleSubmit = async () => {
+    if (!canSubmit) {
+      return;
+    }
+
+    await dispatch(signIn({ username: username.trim(), password }));
+  };
 
   return (
     <KeyboardAvoidingView
@@ -92,7 +104,7 @@ export function LoginScreen() {
                 placeholderTextColor={APP_COLORS.textSecondary}
               />
               <Pressable
-                onPress={() => setShowPassword((value) => !value)}
+                onPress={() => setShowPassword(value => !value)}
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
@@ -113,8 +125,10 @@ export function LoginScreen() {
             </Pressable>
           </View>
 
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
           <Pressable
-            onPress={signIn}
+            onPress={handleSubmit}
             disabled={!canSubmit}
             style={({ pressed }) => [
               styles.button,
@@ -122,7 +136,11 @@ export function LoginScreen() {
               pressed && canSubmit && styles.buttonPressed,
             ]}
           >
-            <Text style={styles.buttonText}>Đăng nhập</Text>
+            {isLoading ? (
+              <ActivityIndicator color={APP_COLORS.surface} />
+            ) : (
+              <Text style={styles.buttonText}>Đăng nhập</Text>
+            )}
           </Pressable>
 
           <Text style={styles.footerNote}>
@@ -279,6 +297,11 @@ const styles = StyleSheet.create({
     color: APP_COLORS.primaryDark,
     fontSize: 12,
     fontWeight: '700',
+  },
+  errorText: {
+    color: '#b42318',
+    marginBottom: 10,
+    fontSize: 13,
   },
   button: {
     marginTop: 4,

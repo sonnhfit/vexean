@@ -1,8 +1,9 @@
 import { StatusBar, useColorScheme } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AuthProvider } from './src/contexts/AuthContext';
+import { Provider } from 'react-redux';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { store } from './src/store/store';
 import { APP_COLORS } from './src/theme/colors';
 
 const lightNavigationTheme = {
@@ -29,14 +30,14 @@ function App() {
   const isDarkMode = useColorScheme() === 'dark';
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
+    <Provider store={store}>
+      <SafeAreaProvider>
         <NavigationContainer theme={isDarkMode ? darkNavigationTheme : lightNavigationTheme}>
           <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
           <RootNavigator />
         </NavigationContainer>
-      </AuthProvider>
-    </SafeAreaProvider>
+      </SafeAreaProvider>
+    </Provider>
   );
 }
 
