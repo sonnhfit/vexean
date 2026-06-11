@@ -2,6 +2,8 @@ import { ComponentProps } from 'react';
 import { BottomTabNavigationOptions, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { AccountScreen } from '../screens/account/AccountScreen';
+import { useAppSelector } from '../store/hooks';
+import { AdminScreen } from '../screens/main/AdminScreen';
 import { CallCenterScreen } from '../screens/main/CallCenterScreen';
 import { CargoScreen } from '../screens/main/CargoScreen';
 import { DashboardScreen } from '../screens/main/DashboardScreen';
@@ -24,10 +26,14 @@ const dashboardIcon = createTabBarIcon('grid', 'grid-outline');
 const passengersIcon = createTabBarIcon('people', 'people-outline');
 const cargoIcon = createTabBarIcon('cube', 'cube-outline');
 const maintenanceIcon = createTabBarIcon('construct', 'construct-outline');
+const adminIcon = createTabBarIcon('shield-half', 'shield-outline');
 const callCenterIcon = createTabBarIcon('headset', 'headset-outline');
 const accountIcon = createTabBarIcon('person-circle', 'person-circle-outline');
 
 export function MainTabs() {
+  const user = useAppSelector(state => state.auth.user);
+  const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -57,11 +63,19 @@ export function MainTabs() {
         component={CargoScreen}
         options={{ title: 'Hàng hoá', tabBarIcon: cargoIcon }}
       />
-      <Tab.Screen
-        name="Maintenance"
-        component={MaintenanceScreen}
-        options={{ title: 'Bảo dưỡng', tabBarIcon: maintenanceIcon }}
-      />
+      {isAdmin ? (
+        <Tab.Screen
+          name="Admin"
+          component={AdminScreen}
+          options={{ title: 'Quản trị', tabBarIcon: adminIcon }}
+        />
+      ) : (
+        <Tab.Screen
+          name="Maintenance"
+          component={MaintenanceScreen}
+          options={{ title: 'Bảo dưỡng', tabBarIcon: maintenanceIcon }}
+        />
+      )}
       <Tab.Screen
         name="CallCenter"
         component={CallCenterScreen}
