@@ -2,57 +2,58 @@ import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
 
-type ScheduleType = 'appointment' | 'pickup';
-type FilterMode = 'all' | 'day' | 'month';
-
-type ScheduleItem = {
-  id: string;
-  type: ScheduleType;
-  title: string;
-  customerName: string;
-  note?: string;
-  date: string; // yyyy-mm-dd
-  time: string; // hh:mm
+type PassengerBooking = {
+  id: number;
+  booking_code: string;
+  passenger_name: string;
+  passenger_phone: string;
+  pickup_location: string;
+  dropoff_location: string;
+  total_amount: string;
+  payment_status: string;
+  status: string;
+  created_at: string;
 };
 
-const initialSchedules: ScheduleItem[] = [
-  {
-    id: 'AP-1001',
-    type: 'appointment',
-    title: 'Tư vấn vé tuyến SGN → ĐL',
-    customerName: 'Lê Thanh Nam',
-    note: 'Khách muốn đặt 4 ghế cuối tuần',
-    date: '2026-06-11',
-    time: '09:30',
-  },
-  {
-    id: 'PK-1002',
-    type: 'pickup',
-    title: 'Lấy hàng COD quận 3',
-    customerName: 'Shop Minh Hương',
-    note: '2 kiện hàng, tổng 18kg',
-    date: '2026-06-11',
-    time: '14:00',
-  },
-  {
-    id: 'AP-1003',
-    type: 'appointment',
-    title: 'Hẹn xác nhận đổi giờ xe',
-    customerName: 'Trần Hoài An',
-    note: 'Đổi từ 16:00 sang 18:00',
-    date: '2026-06-12',
-    time: '08:45',
-  },
-];
+type CargoBooking = {
+  id: number;
+  booking_code: string;
+  sender_name: string;
+  sender_phone: string;
+  receiver_name: string;
+  delivery_location: string;
+  shipping_fee: string;
+  status: string;
+  created_at: string;
+};
 
-function toDateTimeValue(date: string, time: string) {
-  return `${date}T${time}:00`;
+type LookupResponse = {
+  phone: string;
+  passenger_bookings: PassengerBooking[];
+  cargo_bookings: CargoBooking[];
+};
+
+type ViewMode = 'lookup' | 'detail';
+type ScheduleType = 'appointment' | 'pickup';
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString('vi-VN');
 }
 
 export function CallCenterScreen() {
-  const [schedules, setSchedules] = useState<ScheduleItem[]>(initialSchedules);
+  const [phone, setPhone] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<LookupResponse | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('lookup');
   const [isFormModalVisible, setFormModalVisible] = useState(false);
   const [activeFormType, setActiveFormType] = useState<ScheduleType>('appointment');
 
@@ -68,44 +69,54 @@ export function CallCenterScreen() {
   const [pickupTime, setPickupTime] = useState('15:00');
   const [pickupNote, setPickupNote] = useState('');
 
-  const [filterMode, setFilterMode] = useState<FilterMode>('all');
-  const [filterDate, setFilterDate] = useState('2026-06-11');
-  const [filterMonth, setFilterMonth] = useState('2026-06');
-
-  const filteredSchedules = useMemo(() => {
-    let items = schedules;
-
-    if (filterMode === 'day') {
-      items = items.filter(item => item.date === filterDate);
+  const totalRecords = useMemo(() => {
+    if (!result) {
+      return 0;
     }
 
-    if (filterMode === 'month') {
-      items = items.filter(item => item.date.startsWith(filterMonth));
+    return result.passenger_bookings.length + result.cargo_bookings.length;
+  }, [result]);
+
+  const lookupByPhone = async () => {
+    const normalizedPhone = phone.trim();
+    if (!normalizedPhone) {
+      setError('Vui lòng nhập số điện thoại cần tra cứu.');
+      return;
     }
 
-    return [...items].sort((a, b) => {
-      const aTime = new Date(toDateTimeValue(a.date, a.time)).getTime();
-      const bTime = new Date(toDateTimeValue(b.date, b.time)).getTime();
-      return aTime - bTime;
-    });
-  }, [schedules, filterMode, filterDate, filterMonth]);
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await requestJson<LookupResponse>(`/api/nhaxe/lookup/?phone=${encodeURIComponent(normalizedPhone)}`, {
+        method: 'GET',
+        auth: true,
+        logLabel: 'nhaxe-lookup',
+      });
+      setResult(data);
+      setViewMode('detail');
+    } catch (lookupError) {
+      const message = lookupError instanceof Error ? lookupError.message : 'Tra cứu thất bại. Vui lòng thử lại.';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const goBackToLookup = () => {
+    setViewMode('lookup');
+  };
+
+  const openFormModal = (type: ScheduleType) => {
+    setActiveFormType(type);
+    setFormModalVisible(true);
+  };
 
   const addAppointment = () => {
     if (!appointmentName || !appointmentTitle || !appointmentDate || !appointmentTime) {
       return;
     }
 
-    const newItem: ScheduleItem = {
-      id: `AP-${Date.now()}`,
-      type: 'appointment',
-      title: appointmentTitle.trim(),
-      customerName: appointmentName.trim(),
-      note: appointmentNote.trim() || undefined,
-      date: appointmentDate,
-      time: appointmentTime,
-    };
-
-    setSchedules(prev => [newItem, ...prev]);
     setAppointmentName('');
     setAppointmentTitle('');
     setAppointmentNote('');
@@ -117,31 +128,80 @@ export function CallCenterScreen() {
       return;
     }
 
-    const newItem: ScheduleItem = {
-      id: `PK-${Date.now()}`,
-      type: 'pickup',
-      title: pickupTitle.trim(),
-      customerName: pickupName.trim(),
-      note: pickupNote.trim() || undefined,
-      date: pickupDate,
-      time: pickupTime,
-    };
-
-    setSchedules(prev => [newItem, ...prev]);
     setPickupName('');
     setPickupTitle('');
     setPickupNote('');
     setFormModalVisible(false);
   };
 
-  const openFormModal = (type: ScheduleType) => {
-    setActiveFormType(type);
-    setFormModalVisible(true);
-  };
+  if (viewMode === 'detail' && result) {
+    return (
+      <ScreenContainer title="Tổng Đài" subtitle="Chi tiết tra cứu khách hàng">
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionIconWrap}>
+                <Ionicons name="person-circle-outline" size={16} color={APP_COLORS.primaryDark} />
+              </View>
+              <Text style={styles.sectionTitle}>Thông tin tra cứu</Text>
+            </View>
+            <Text style={styles.metaText}>Số điện thoại: {result.phone}</Text>
+            <Text style={styles.metaText}>Tổng bản ghi: {totalRecords}</Text>
+          </View>
+
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>Lịch sử đặt vé hành khách</Text>
+            {result.passenger_bookings.length === 0 ? (
+              <Text style={styles.emptyText}>Không có lịch sử đặt vé hành khách.</Text>
+            ) : (
+              result.passenger_bookings.map(item => (
+                <View key={`passenger-${item.id}`} style={styles.itemCard}>
+                  <Text style={styles.itemTitle}>{item.booking_code}</Text>
+                  <Text style={styles.itemMeta}>Khách: {item.passenger_name}</Text>
+                  <Text style={styles.itemMeta}>SĐT: {item.passenger_phone}</Text>
+                  <Text style={styles.itemMeta}>Điểm đón: {item.pickup_location}</Text>
+                  <Text style={styles.itemMeta}>Điểm trả: {item.dropoff_location}</Text>
+                  <Text style={styles.itemMeta}>Thanh toán: {item.total_amount} ({item.payment_status})</Text>
+                  <Text style={styles.itemMeta}>Trạng thái: {item.status}</Text>
+                  <Text style={styles.itemMeta}>Tạo lúc: {formatDateTime(item.created_at)}</Text>
+                </View>
+              ))
+            )}
+          </View>
+
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>Lịch sử đơn hàng hoá</Text>
+            {result.cargo_bookings.length === 0 ? (
+              <Text style={styles.emptyText}>Không có lịch sử đơn hàng hoá.</Text>
+            ) : (
+              result.cargo_bookings.map(item => (
+                <View key={`cargo-${item.id}`} style={styles.itemCard}>
+                  <Text style={styles.itemTitle}>{item.booking_code}</Text>
+                  <Text style={styles.itemMeta}>Người gửi: {item.sender_name} ({item.sender_phone})</Text>
+                  <Text style={styles.itemMeta}>Người nhận: {item.receiver_name}</Text>
+                  <Text style={styles.itemMeta}>Nơi giao: {item.delivery_location}</Text>
+                  <Text style={styles.itemMeta}>Cước phí: {item.shipping_fee}</Text>
+                  <Text style={styles.itemMeta}>Trạng thái: {item.status}</Text>
+                  <Text style={styles.itemMeta}>Tạo lúc: {formatDateTime(item.created_at)}</Text>
+                </View>
+              ))
+            )}
+          </View>
+
+          <Pressable style={styles.secondaryButton} onPress={goBackToLookup}>
+            <View style={styles.buttonContent}>
+              <Ionicons name="arrow-back-outline" size={16} color={APP_COLORS.primaryDark} />
+              <Text style={styles.secondaryButtonText}>Back</Text>
+            </View>
+          </Pressable>
+        </ScrollView>
+      </ScreenContainer>
+    );
+  }
 
   return (
-    <ScreenContainer title="Tổng Đài" subtitle="Quản lý lịch hẹn khách và lịch trình lấy hàng">
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
+    <ScreenContainer title="Tổng Đài" subtitle="Tra cứu lịch sử theo số điện thoại">
+      <View style={styles.contentContainer}>
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionIconWrap}>
@@ -169,102 +229,33 @@ export function CallCenterScreen() {
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionIconWrap}>
-              <Ionicons name="list-outline" size={16} color={APP_COLORS.primaryDark} />
+              <Ionicons name="search-outline" size={16} color={APP_COLORS.primaryDark} />
             </View>
-            <Text style={styles.sectionTitle}>Lịch trình tổng đài</Text>
+            <Text style={styles.sectionTitle}>Tra cứu theo Số Điện Thoại</Text>
           </View>
 
-          <View style={styles.filterModeRow}>
-            <Pressable
-              style={[styles.filterChip, filterMode === 'all' && styles.filterChipActive]}
-              onPress={() => setFilterMode('all')}
-            >
-              <Ionicons
-                name="apps-outline"
-                size={13}
-                color={filterMode === 'all' ? APP_COLORS.primaryDark : APP_COLORS.textSecondary}
-              />
-              <Text style={[styles.filterChipText, filterMode === 'all' && styles.filterChipTextActive]}>Tất cả</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.filterChip, filterMode === 'day' && styles.filterChipActive]}
-              onPress={() => setFilterMode('day')}
-            >
-              <Ionicons
-                name="today-outline"
-                size={13}
-                color={filterMode === 'day' ? APP_COLORS.primaryDark : APP_COLORS.textSecondary}
-              />
-              <Text style={[styles.filterChipText, filterMode === 'day' && styles.filterChipTextActive]}>Theo ngày</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.filterChip, filterMode === 'month' && styles.filterChipActive]}
-              onPress={() => setFilterMode('month')}
-            >
-              <Ionicons
-                name="calendar-number-outline"
-                size={13}
-                color={filterMode === 'month' ? APP_COLORS.primaryDark : APP_COLORS.textSecondary}
-              />
-              <Text style={[styles.filterChipText, filterMode === 'month' && styles.filterChipTextActive]}>Theo tháng</Text>
-            </Pressable>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Số điện thoại</Text>
+            <TextInput
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="Nhập số điện thoại"
+              placeholderTextColor={APP_COLORS.textSecondary}
+              style={styles.input}
+              keyboardType="phone-pad"
+            />
           </View>
 
-          {filterMode === 'day' ? (
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Ngày lọc (YYYY-MM-DD)</Text>
-              <TextInput
-                value={filterDate}
-                onChangeText={setFilterDate}
-                placeholder="2026-06-11"
-                placeholderTextColor={APP_COLORS.textSecondary}
-                style={styles.input}
-              />
-            </View>
-          ) : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          {filterMode === 'month' ? (
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Tháng lọc (YYYY-MM)</Text>
-              <TextInput
-                value={filterMonth}
-                onChangeText={setFilterMonth}
-                placeholder="2026-06"
-                placeholderTextColor={APP_COLORS.textSecondary}
-                style={styles.input}
-              />
+          <Pressable style={[styles.primaryButton, loading && styles.disabledButton]} disabled={loading} onPress={lookupByPhone}>
+            <View style={styles.buttonContent}>
+              <Ionicons name="search" size={16} color={APP_COLORS.surface} />
+              <Text style={styles.primaryButtonText}>{loading ? 'Đang tra cứu...' : 'Tra cứu'}</Text>
             </View>
-          ) : null}
-
-          <View style={styles.listWrap}>
-            {filteredSchedules.length === 0 ? (
-              <Text style={styles.emptyText}>Không có lịch trình phù hợp bộ lọc.</Text>
-            ) : (
-              filteredSchedules.map(item => (
-                <View key={item.id} style={styles.scheduleCard}>
-                  <View style={styles.scheduleHeader}>
-                    <View style={styles.scheduleTypeWrap}>
-                      <Ionicons
-                        name={item.type === 'appointment' ? 'call-outline' : 'cube-outline'}
-                        size={13}
-                        color={APP_COLORS.primaryDark}
-                      />
-                      <Text style={styles.scheduleType}>{item.type === 'appointment' ? 'Lịch hẹn khách' : 'Lịch lấy hàng'}</Text>
-                    </View>
-                    <View style={styles.scheduleTimeWrap}>
-                      <Ionicons name="time-outline" size={12} color={APP_COLORS.textSecondary} />
-                      <Text style={styles.scheduleDateTime}>{item.date} • {item.time}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.scheduleTitle}>{item.title}</Text>
-                  <Text style={styles.scheduleMeta}>Khách: {item.customerName}</Text>
-                  {item.note ? <Text style={styles.scheduleMeta}>Ghi chú: {item.note}</Text> : null}
-                </View>
-              ))
-            )}
-          </View>
+          </Pressable>
         </View>
-      </ScrollView>
+      </View>
 
       <Modal
         visible={isFormModalVisible}
@@ -465,13 +456,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 8,
   },
+  formGroup: {
+    marginBottom: 10,
+  },
+  rowInputs: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  halfInput: {
+    flex: 1,
+  },
+  noteInput: {
+    minHeight: 74,
+    textAlignVertical: 'top',
+  },
+  actionRow: {
+    gap: 8,
+  },
   sectionHint: {
     marginBottom: 10,
     color: APP_COLORS.textSecondary,
     fontSize: 12,
-  },
-  formGroup: {
-    marginBottom: 10,
   },
   label: {
     marginBottom: 6,
@@ -489,21 +495,6 @@ const styles = StyleSheet.create({
     color: APP_COLORS.textPrimary,
     fontSize: 14,
   },
-  rowInputs: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
-  },
-  halfInput: {
-    flex: 1,
-  },
-  noteInput: {
-    minHeight: 74,
-    textAlignVertical: 'top',
-  },
-  actionRow: {
-    gap: 8,
-  },
   buttonContent: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -518,6 +509,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  disabledButton: {
+    opacity: 0.7,
+  },
   primaryButtonText: {
     color: APP_COLORS.surface,
     fontSize: 14,
@@ -531,88 +525,42 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 8,
   },
   secondaryButtonText: {
     color: APP_COLORS.primaryDark,
     fontSize: 14,
     fontWeight: '700',
   },
-  filterModeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
-  },
-  filterChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: 1,
-    borderColor: APP_COLORS.border,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: APP_COLORS.surface,
-  },
-  filterChipActive: {
-    backgroundColor: APP_COLORS.primaryLight,
-    borderColor: APP_COLORS.primary,
-  },
-  filterChipText: {
-    color: APP_COLORS.textSecondary,
+  errorText: {
+    marginBottom: 8,
+    color: APP_COLORS.danger,
     fontSize: 12,
     fontWeight: '600',
   },
-  filterChipTextActive: {
-    color: APP_COLORS.primaryDark,
+  metaText: {
+    color: APP_COLORS.textSecondary,
+    fontSize: 13,
+    marginTop: 3,
   },
-  listWrap: {
-    marginTop: 4,
-    gap: 8,
-  },
-  scheduleCard: {
+  itemCard: {
     borderWidth: 1,
     borderColor: APP_COLORS.border,
     borderRadius: 10,
     padding: 10,
     backgroundColor: APP_COLORS.primaryLight,
+    marginBottom: 8,
   },
-  scheduleHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  scheduleTypeWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    flex: 1,
-  },
-  scheduleType: {
-    color: APP_COLORS.primaryDark,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  scheduleTimeWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  scheduleDateTime: {
-    color: APP_COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  scheduleTitle: {
-    marginTop: 4,
+  itemTitle: {
     color: APP_COLORS.textPrimary,
     fontSize: 14,
     fontWeight: '700',
+    marginBottom: 4,
   },
-  scheduleMeta: {
-    marginTop: 2,
+  itemMeta: {
     color: APP_COLORS.textSecondary,
     fontSize: 12,
+    marginTop: 2,
   },
   emptyText: {
     color: APP_COLORS.textSecondary,
