@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
@@ -51,6 +51,7 @@ function formatDateTime(value: string) {
 export function CallCenterScreen() {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LookupResponse | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('lookup');
@@ -77,6 +78,17 @@ export function CallCenterScreen() {
     return result.passenger_bookings.length + result.cargo_bookings.length;
   }, [result]);
 
+  const fetchLookup = async (targetPhone: string) => {
+    const data = await requestJson<LookupResponse>(`/api/nhaxe/lookup/?phone=${encodeURIComponent(targetPhone)}`, {
+      method: 'GET',
+      auth: true,
+      logLabel: 'nhaxe-lookup',
+    });
+
+    setResult(data);
+    setViewMode('detail');
+  };
+
   const lookupByPhone = async () => {
     const normalizedPhone = phone.trim();
     if (!normalizedPhone) {
@@ -88,18 +100,35 @@ export function CallCenterScreen() {
     setError(null);
 
     try {
-      const data = await requestJson<LookupResponse>(`/api/nhaxe/lookup/?phone=${encodeURIComponent(normalizedPhone)}`, {
-        method: 'GET',
-        auth: true,
-        logLabel: 'nhaxe-lookup',
-      });
-      setResult(data);
-      setViewMode('detail');
+      await fetchLookup(normalizedPhone);
     } catch (lookupError) {
       const message = lookupError instanceof Error ? lookupError.message : 'Tra cứu thất bại. Vui lòng thử lại.';
       setError(message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    if (refreshing || loading) {
+      return;
+    }
+
+    const targetPhone = (viewMode === 'detail' ? result?.phone : phone)?.trim() || '';
+    if (!targetPhone) {
+      return;
+    }
+
+    setRefreshing(true);
+    setError(null);
+
+    try {
+      await fetchLookup(targetPhone);
+    } catch (lookupError) {
+      const message = lookupError instanceof Error ? lookupError.message : 'Làm mới thất bại. Vui lòng thử lại.';
+      setError(message);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -137,7 +166,11 @@ export function CallCenterScreen() {
   if (viewMode === 'detail' && result) {
     return (
       <ScreenContainer title="Tổng Đài" subtitle="Chi tiết tra cứu khách hàng">
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.contentContainer}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={APP_COLORS.primaryDark} />}
+        >
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <View style={styles.sectionIconWrap}>
@@ -201,7 +234,11 @@ export function CallCenterScreen() {
 
   return (
     <ScreenContainer title="Tổng Đài" subtitle="Tra cứu lịch sử theo số điện thoại">
-      <View style={styles.contentContainer}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={APP_COLORS.primaryDark} />}
+      >
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionIconWrap}>
@@ -255,7 +292,7 @@ export function CallCenterScreen() {
             </View>
           </Pressable>
         </View>
-      </View>
+      </ScrollView>
 
       <Modal
         visible={isFormModalVisible}
