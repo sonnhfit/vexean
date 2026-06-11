@@ -125,7 +125,7 @@ export function LoginScreen() {
             </Pressable>
           </View>
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {error ? <Text style={styles.errorText} accessibilityRole="alert">{error}</Text> : null}
 
           <Pressable
             onPress={handleSubmit}
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   errorText: {
-    color: '#b42318',
+    color: APP_COLORS.danger,
     marginBottom: 10,
     fontSize: 13,
   },

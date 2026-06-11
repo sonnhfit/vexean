@@ -1,6 +1,5 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
-
-const LOGIN_ENDPOINT = 'https://backend.nhaxeannhien.vn/api/users/token/';
+import { LOGIN_ENDPOINT } from '../config/api';
 
 type UserPermissions = Record<string, boolean>;
 
@@ -46,6 +45,40 @@ const initialState: AuthState = {
   error: null,
 };
 
+function extractErrorMessage(errorData: unknown): string | undefined {
+  if (!errorData || typeof errorData !== 'object') {
+    return undefined;
+  }
+
+  const asRecord = errorData as Record<string, unknown>;
+  const detail = asRecord.detail;
+  const message = asRecord.message;
+
+  if (typeof detail === 'string') {
+    return detail;
+  }
+
+  if (Array.isArray(detail)) {
+    const first = detail[0];
+    return typeof first === 'string' ? first : undefined;
+  }
+
+  if (typeof message === 'string') {
+    return message;
+  }
+
+  return undefined;
+}
+
+function isAuthUser(user: unknown): user is AuthUser {
+  if (!user || typeof user !== 'object') {
+    return false;
+  }
+
+  const asRecord = user as Record<string, unknown>;
+  return typeof asRecord.id === 'number' && typeof asRecord.username === 'string';
+}
+
 export const signIn = createAsyncThunk<LoginPayload, SignInInput, { rejectValue: string }>(
   'auth/signIn',
   async ({ username, password }, { rejectWithValue }) => {
@@ -58,24 +91,36 @@ export const signIn = createAsyncThunk<LoginPayload, SignInInput, { rejectValue:
         body: JSON.stringify({ username, password }),
       });
 
-      const data = (await response.json().catch(() => null)) as Partial<LoginPayload> & {
-        detail?: string;
-        message?: string;
-      };
-
       if (!response.ok) {
-        const errorMessage = data?.detail || data?.message || 'Đăng nhập thất bại.';
+        let errorMessage = 'Đăng nhập thất bại.';
+        try {
+          const errorData = (await response.json()) as unknown;
+          errorMessage = extractErrorMessage(errorData) || errorMessage;
+        } catch {
+        }
         return rejectWithValue(errorMessage);
       }
 
-      if (!data?.access || !data?.refresh || !data?.user) {
+      let loginResponse: Partial<LoginPayload>;
+      try {
+        loginResponse = (await response.json()) as Partial<LoginPayload>;
+      } catch {
+        return rejectWithValue('Phản hồi máy chủ không hợp lệ. Vui lòng thử lại.');
+      }
+
+      if (
+        !loginResponse.access ||
+        !loginResponse.refresh ||
+        !loginResponse.user ||
+        !isAuthUser(loginResponse.user)
+      ) {
         return rejectWithValue('Dữ liệu đăng nhập không hợp lệ từ máy chủ.');
       }
 
       return {
-        access: data.access,
-        refresh: data.refresh,
-        user: data.user,
+        access: loginResponse.access,
+        refresh: loginResponse.refresh,
+        user: loginResponse.user,
       };
     } catch {
       return rejectWithValue('Không thể kết nối máy chủ. Vui lòng thử lại.');
