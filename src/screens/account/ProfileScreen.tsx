@@ -1,14 +1,18 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 
 export function ProfileScreen() {
+  const user = useAppSelector(state => state.auth.user);
+
   return (
     <ScreenContainer title="Hồ sơ" subtitle="Thông tin cá nhân và vai trò vận hành">
       <View style={styles.card}>
-        <Text style={styles.row}>Họ tên: Nguyễn Văn A</Text>
-        <Text style={styles.row}>Vai trò: Điều hành</Text>
-        <Text style={styles.row}>Mã nhân sự: HRM-001</Text>
+        <Text style={styles.row}>Họ tên: {user?.full_name || '-'}</Text>
+        <Text style={styles.row}>Vai trò: {user?.role_display || user?.role || '-'}</Text>
+        <Text style={styles.row}>Tài khoản: {user?.username || '-'}</Text>
+        <Text style={styles.row}>Email: {user?.email || '-'}</Text>
       </View>
     </ScreenContainer>
   );

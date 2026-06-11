@@ -1,15 +1,15 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useAuth } from '../contexts/AuthContext';
 import { ProfileScreen } from '../screens/account/ProfileScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
+import { useAppSelector } from '../store/hooks';
 import { APP_COLORS } from '../theme/colors';
-import { MainTabs } from './MainTabs';
 import { RootStackParamList } from '../types/navigation';
+import { MainTabs } from './MainTabs';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
-  const { isAuthenticated } = useAuth();
+  const isAuthenticated = useAppSelector(state => Boolean(state.auth.accessToken));
 
   return (
     <Stack.Navigator
