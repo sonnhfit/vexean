@@ -1,4 +1,10 @@
-import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ComponentProps,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -57,13 +63,18 @@ type DriverForm = {
 
 type DriverDateField = 'license_expiry' | 'date_of_birth';
 
-type DriverListResponse = Driver[] | {
-  results?: Driver[];
-};
+type DriverListResponse =
+  | Driver[]
+  | {
+      results?: Driver[];
+    };
 
 const DRIVER_ENDPOINT = '/api/nhaxe/drivers/';
 
-const statusMeta: Record<DriverStatus, { label: string; color: string; backgroundColor: string; icon: IconName }> = {
+const statusMeta: Record<
+  DriverStatus,
+  { label: string; color: string; backgroundColor: string; icon: IconName }
+> = {
   available: {
     label: 'Sẵn sàng',
     color: APP_COLORS.success,
@@ -193,42 +204,57 @@ export function DriverManagementScreen() {
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
   const [form, setForm] = useState<DriverForm>(emptyForm);
 
-  const activeDrivers = useMemo(() => drivers.filter(driver => driver.is_active).length, [drivers]);
-  const availableDrivers = useMemo(() => drivers.filter(driver => driver.status === 'available').length, [drivers]);
+  const activeDrivers = useMemo(
+    () => drivers.filter(driver => driver.is_active).length,
+    [drivers],
+  );
+  const availableDrivers = useMemo(
+    () => drivers.filter(driver => driver.status === 'available').length,
+    [drivers],
+  );
 
-  const fetchDrivers = useCallback(async (targetSearch: string, mode: 'initial' | 'refresh' = 'initial') => {
-    if (mode === 'initial') {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
-
-    setError(null);
-
-    try {
-      const params = new URLSearchParams();
-      if (targetSearch.trim()) {
-        params.set('search', targetSearch.trim());
+  const fetchDrivers = useCallback(
+    async (targetSearch: string, mode: 'initial' | 'refresh' = 'initial') => {
+      if (mode === 'initial') {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
       }
-      params.set('ordering', 'full_name');
 
-      const suffix = params.toString() ? `?${params.toString()}` : '';
-      const data = await requestJson<DriverListResponse>(`${DRIVER_ENDPOINT}${suffix}`, {
-        method: 'GET',
-        auth: true,
-        logLabel: 'drivers-list',
-      });
+      setError(null);
 
-      setDrivers(normalizeDriverList(data));
-      setAppliedSearch(targetSearch.trim());
-    } catch (driverError) {
-      const message = driverError instanceof Error ? driverError.message : 'Không thể tải danh sách tài xế.';
-      setError(message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+      try {
+        const params = new URLSearchParams();
+        if (targetSearch.trim()) {
+          params.set('search', targetSearch.trim());
+        }
+        params.set('ordering', 'full_name');
+
+        const suffix = params.toString() ? `?${params.toString()}` : '';
+        const data = await requestJson<DriverListResponse>(
+          `${DRIVER_ENDPOINT}${suffix}`,
+          {
+            method: 'GET',
+            auth: true,
+            logLabel: 'drivers-list',
+          },
+        );
+
+        setDrivers(normalizeDriverList(data));
+        setAppliedSearch(targetSearch.trim());
+      } catch (driverError) {
+        const message =
+          driverError instanceof Error
+            ? driverError.message
+            : 'Không thể tải danh sách tài xế.';
+        setError(message);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     fetchDrivers('', 'initial');
@@ -273,32 +299,44 @@ export function DriverManagementScreen() {
     setForm(emptyForm);
   };
 
-  const updateForm = <K extends keyof DriverForm>(key: K, value: DriverForm[K]) => {
+  const updateForm = <K extends keyof DriverForm>(
+    key: K,
+    value: DriverForm[K],
+  ) => {
     setForm(current => ({ ...current, [key]: value }));
   };
 
   const saveDriver = async () => {
     if (!form.full_name.trim() || !form.phone.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập họ tên và số điện thoại tài xế.');
+      Alert.alert(
+        'Thiếu thông tin',
+        'Vui lòng nhập họ tên và số điện thoại tài xế.',
+      );
       return;
     }
 
     setSaving(true);
     try {
       const isEditing = Boolean(editingDriver);
-      await requestJson<Driver>(isEditing ? `${DRIVER_ENDPOINT}${editingDriver?.id}/` : DRIVER_ENDPOINT, {
-        method: isEditing ? 'PATCH' : 'POST',
-        auth: true,
-        body: buildDriverPayload(form),
-        logLabel: isEditing ? 'drivers-update' : 'drivers-create',
-      });
+      await requestJson<Driver>(
+        isEditing ? `${DRIVER_ENDPOINT}${editingDriver?.id}/` : DRIVER_ENDPOINT,
+        {
+          method: isEditing ? 'PATCH' : 'POST',
+          auth: true,
+          body: buildDriverPayload(form),
+          logLabel: isEditing ? 'drivers-update' : 'drivers-create',
+        },
+      );
 
       setFormModalVisible(false);
       setEditingDriver(null);
       setForm(emptyForm);
       await fetchDrivers(appliedSearch, 'initial');
     } catch (saveError) {
-      const message = saveError instanceof Error ? saveError.message : 'Không thể lưu thông tin tài xế.';
+      const message =
+        saveError instanceof Error
+          ? saveError.message
+          : 'Không thể lưu thông tin tài xế.';
       Alert.alert('Lưu thất bại', message);
     } finally {
       setSaving(false);
@@ -306,46 +344,58 @@ export function DriverManagementScreen() {
   };
 
   const deleteDriver = async (driver: Driver) => {
-    Alert.alert(
-      'Xoá tài xế',
-      `Bạn muốn xoá mềm hồ sơ ${driver.full_name}?`,
-      [
-        { text: 'Huỷ', style: 'cancel' },
-        {
-          text: 'Xoá',
-          style: 'destructive',
-          onPress: async () => {
-            setDeletingId(driver.id);
-            try {
-              await requestJson<unknown>(`${DRIVER_ENDPOINT}${driver.id}/`, {
-                method: 'DELETE',
-                auth: true,
-                logLabel: 'drivers-delete',
-              });
-              await fetchDrivers(appliedSearch, 'initial');
-            } catch (deleteError) {
-              const message = deleteError instanceof Error ? deleteError.message : 'Không thể xoá tài xế.';
-              Alert.alert('Xoá thất bại', message);
-            } finally {
-              setDeletingId(null);
-            }
-          },
+    Alert.alert('Xoá tài xế', `Bạn muốn xoá mềm hồ sơ ${driver.full_name}?`, [
+      { text: 'Huỷ', style: 'cancel' },
+      {
+        text: 'Xoá',
+        style: 'destructive',
+        onPress: async () => {
+          setDeletingId(driver.id);
+          try {
+            await requestJson<unknown>(`${DRIVER_ENDPOINT}${driver.id}/`, {
+              method: 'DELETE',
+              auth: true,
+              logLabel: 'drivers-delete',
+            });
+            await fetchDrivers(appliedSearch, 'initial');
+          } catch (deleteError) {
+            const message =
+              deleteError instanceof Error
+                ? deleteError.message
+                : 'Không thể xoá tài xế.';
+            Alert.alert('Xoá thất bại', message);
+          } finally {
+            setDeletingId(null);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   return (
-    <ScreenContainer title="Quản lý tài xế" subtitle="Tìm kiếm, thêm mới và quản lý hồ sơ tài xế">
+    <ScreenContainer
+      title="Quản lý tài xế"
+      subtitle="Tìm kiếm, thêm mới và quản lý hồ sơ tài xế"
+    >
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.contentContainer}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={APP_COLORS.primaryDark} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={APP_COLORS.primaryDark}
+          />
+        }
       >
         <View style={styles.searchCard}>
           <View style={styles.searchInputWrap}>
-            <Ionicons name="search-outline" size={18} color={APP_COLORS.textSecondary} />
+            <Ionicons
+              name="search-outline"
+              size={18}
+              color={APP_COLORS.textSecondary}
+            />
             <TextInput
               value={searchText}
               onChangeText={setSearchText}
@@ -356,12 +406,24 @@ export function DriverManagementScreen() {
               onSubmitEditing={searchDrivers}
             />
             {searchText ? (
-              <Pressable style={styles.clearButton} onPress={clearSearch} hitSlop={8}>
-                <Ionicons name="close-circle" size={18} color={APP_COLORS.textSecondary} />
+              <Pressable
+                style={styles.clearButton}
+                onPress={clearSearch}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={18}
+                  color={APP_COLORS.textSecondary}
+                />
               </Pressable>
             ) : null}
           </View>
-          <Pressable style={styles.searchButton} onPress={searchDrivers} disabled={loading}>
+          <Pressable
+            style={styles.searchButton}
+            onPress={searchDrivers}
+            disabled={loading}
+          >
             {loading ? (
               <ActivityIndicator color={APP_COLORS.surface} size="small" />
             ) : (
@@ -389,7 +451,11 @@ export function DriverManagementScreen() {
         <View style={styles.listHeader}>
           <View>
             <Text style={styles.sectionTitle}>Danh sách tài xế</Text>
-            <Text style={styles.sectionHint}>{appliedSearch ? `Kết quả cho "${appliedSearch}"` : 'Sắp xếp theo họ tên'}</Text>
+            <Text style={styles.sectionHint}>
+              {appliedSearch
+                ? `Kết quả cho "${appliedSearch}"`
+                : 'Sắp xếp theo họ tên'}
+            </Text>
           </View>
           <Pressable style={styles.addButton} onPress={openAddModal}>
             <Ionicons name="add" size={24} color={APP_COLORS.surface} />
@@ -398,10 +464,17 @@ export function DriverManagementScreen() {
 
         {error ? (
           <View style={styles.feedbackCard}>
-            <Ionicons name="alert-circle-outline" size={22} color={APP_COLORS.danger} />
+            <Ionicons
+              name="alert-circle-outline"
+              size={22}
+              color={APP_COLORS.danger}
+            />
             <Text style={styles.feedbackTitle}>Không tải được dữ liệu</Text>
             <Text style={styles.feedbackText}>{error}</Text>
-            <Pressable style={styles.retryButton} onPress={() => fetchDrivers(appliedSearch, 'initial')}>
+            <Pressable
+              style={styles.retryButton}
+              onPress={() => fetchDrivers(appliedSearch, 'initial')}
+            >
               <Text style={styles.retryButtonText}>Thử lại</Text>
             </Pressable>
           </View>
@@ -410,29 +483,39 @@ export function DriverManagementScreen() {
         {loading && !error ? (
           <View style={styles.feedbackCard}>
             <ActivityIndicator color={APP_COLORS.primaryDark} />
-            <Text style={styles.feedbackText}>Đang tải danh sách tài xế...</Text>
+            <Text style={styles.feedbackText}>
+              Đang tải danh sách tài xế...
+            </Text>
           </View>
         ) : null}
 
         {!loading && !error && drivers.length === 0 ? (
           <View style={styles.feedbackCard}>
             <View style={styles.emptyIconWrap}>
-              <Ionicons name="id-card-outline" size={26} color={APP_COLORS.primaryDark} />
+              <Ionicons
+                name="id-card-outline"
+                size={26}
+                color={APP_COLORS.primaryDark}
+              />
             </View>
             <Text style={styles.feedbackTitle}>Chưa có tài xế</Text>
-            <Text style={styles.feedbackText}>Thêm hồ sơ tài xế mới để bắt đầu quản lý phân công xe.</Text>
+            <Text style={styles.feedbackText}>
+              Thêm hồ sơ tài xế mới để bắt đầu quản lý phân công xe.
+            </Text>
           </View>
         ) : null}
 
-        {!loading && !error ? drivers.map(driver => (
-          <DriverCard
-            key={driver.id}
-            driver={driver}
-            deleting={deletingId === driver.id}
-            onEdit={() => openEditModal(driver)}
-            onDelete={() => deleteDriver(driver)}
-          />
-        )) : null}
+        {!loading && !error
+          ? drivers.map(driver => (
+              <DriverCard
+                key={driver.id}
+                driver={driver}
+                deleting={deletingId === driver.id}
+                onEdit={() => openEditModal(driver)}
+                onDelete={() => deleteDriver(driver)}
+              />
+            ))
+          : null}
       </ScrollView>
 
       <DriverFormModal
@@ -462,61 +545,58 @@ function DriverCard({
   const meta = statusMeta[driver.status] || statusMeta.inactive;
 
   return (
-    <View style={styles.driverCard}>
-      <View style={styles.driverTopRow}>
-        <View style={styles.avatarWrap}>
-          <Text style={styles.avatarText}>{driver.full_name.trim().charAt(0).toUpperCase() || 'T'}</Text>
-        </View>
-        <View style={styles.driverTitleWrap}>
-          <Text style={styles.driverName}>{driver.full_name}</Text>
-          <Text style={styles.driverPhone}>{driver.phone || 'Chưa có số điện thoại'}</Text>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: meta.backgroundColor }]}>
-          <Ionicons name={meta.icon} size={13} color={meta.color} />
-          <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
-        </View>
+    <View style={styles.driverRow}>
+      <View style={styles.avatarWrap}>
+        <Text style={styles.avatarText}>
+          {driver.full_name.trim().charAt(0).toUpperCase() || 'T'}
+        </Text>
       </View>
-
-      <View style={styles.infoGrid}>
-        <InfoPill icon="card-outline" label="GPLX" value={driver.license_number || 'Chưa cập nhật'} />
-        <InfoPill icon="ribbon-outline" label="Hạng" value={driver.license_class || 'N/A'} />
-        <InfoPill icon="calendar-outline" label="Hết hạn" value={formatDate(driver.license_expiry)} />
-        <InfoPill icon="bus-outline" label="Xe" value={driver.assigned_vehicle_plate || 'Chưa phân xe'} />
-      </View>
-
-      {driver.address || driver.notes ? (
-        <View style={styles.noteBox}>
-          {driver.address ? <Text style={styles.noteText}>Địa chỉ: {driver.address}</Text> : null}
-          {driver.notes ? <Text style={styles.noteText}>Ghi chú: {driver.notes}</Text> : null}
+      <View style={styles.driverTitleWrap}>
+        <View style={styles.driverTitleLine}>
+          <Text style={styles.driverName} numberOfLines={1}>
+            {driver.full_name}
+          </Text>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: meta.backgroundColor },
+            ]}
+          >
+            <Ionicons name={meta.icon} size={13} color={meta.color} />
+            <Text style={[styles.statusText, { color: meta.color }]}>
+              {meta.label}
+            </Text>
+          </View>
         </View>
-      ) : null}
-
-      <View style={styles.cardFooter}>
-        <Text style={styles.activeText}>{driver.is_active ? 'Hồ sơ đang hoạt động' : 'Hồ sơ đã tắt'}</Text>
-        <View style={styles.cardActions}>
-          <Pressable style={styles.iconButton} onPress={onEdit}>
-            <Ionicons name="create-outline" size={18} color={APP_COLORS.primaryDark} />
-          </Pressable>
-          <Pressable style={[styles.iconButton, styles.deleteButton]} onPress={onDelete} disabled={deleting}>
-            {deleting ? (
-              <ActivityIndicator size="small" color={APP_COLORS.danger} />
-            ) : (
-              <Ionicons name="trash-outline" size={18} color={APP_COLORS.danger} />
-            )}
-          </Pressable>
-        </View>
+        <Text style={styles.driverPhone} numberOfLines={1}>
+          {driver.phone || 'Chưa có SĐT'} • GPLX{' '}
+          {driver.license_number || 'chưa cập nhật'} •{' '}
+          {driver.assigned_vehicle_plate || 'chưa phân xe'}
+        </Text>
       </View>
-    </View>
-  );
-}
-
-function InfoPill({ icon, label, value }: { icon: IconName; label: string; value: string }) {
-  return (
-    <View style={styles.infoPill}>
-      <Ionicons name={icon} size={14} color={APP_COLORS.primaryDark} />
-      <View style={styles.infoTextWrap}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue} numberOfLines={1}>{value}</Text>
+      <View style={styles.cardActions}>
+        <Pressable style={styles.iconButton} onPress={onEdit}>
+          <Ionicons
+            name="create-outline"
+            size={17}
+            color={APP_COLORS.primaryDark}
+          />
+        </Pressable>
+        <Pressable
+          style={[styles.iconButton, styles.deleteButton]}
+          onPress={onDelete}
+          disabled={deleting}
+        >
+          {deleting ? (
+            <ActivityIndicator size="small" color={APP_COLORS.danger} />
+          ) : (
+            <Ionicons
+              name="trash-outline"
+              size={17}
+              color={APP_COLORS.danger}
+            />
+          )}
+        </Pressable>
       </View>
     </View>
   );
@@ -539,30 +619,76 @@ function DriverFormModal({
   onClose: () => void;
   onSave: () => void;
 }) {
-  const [activeDateField, setActiveDateField] = useState<DriverDateField | null>(null);
-  const activeDateTitle = activeDateField === 'license_expiry' ? 'Chọn ngày hết hạn GPLX' : 'Chọn ngày sinh';
+  const [activeDateField, setActiveDateField] =
+    useState<DriverDateField | null>(null);
+  const activeDateTitle =
+    activeDateField === 'license_expiry'
+      ? 'Chọn ngày hết hạn GPLX'
+      : 'Chọn ngày sinh';
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <View>
-              <Text style={styles.modalTitle}>{editing ? 'Cập nhật tài xế' : 'Thêm tài xế'}</Text>
-              <Text style={styles.modalSubtitle}>Nhập thông tin hồ sơ và giấy phép</Text>
+              <Text style={styles.modalTitle}>
+                {editing ? 'Cập nhật tài xế' : 'Thêm tài xế'}
+              </Text>
+              <Text style={styles.modalSubtitle}>
+                Nhập thông tin hồ sơ và giấy phép
+              </Text>
             </View>
             <Pressable style={styles.modalCloseButton} onPress={onClose}>
               <Ionicons name="close" size={22} color={APP_COLORS.textPrimary} />
             </Pressable>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
-            <FormInput label="Họ tên" value={form.full_name} onChangeText={value => onChange('full_name', value)} placeholder="Nguyễn Văn A" />
-            <FormInput label="Số điện thoại" value={form.phone} onChangeText={value => onChange('phone', value)} placeholder="0901234567" keyboardType="phone-pad" />
-            <FormInput label="CCCD/CMND" value={form.id_number} onChangeText={value => onChange('id_number', value)} placeholder="001234567890" keyboardType="number-pad" />
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.formContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <FormInput
+              label="Họ tên"
+              value={form.full_name}
+              onChangeText={value => onChange('full_name', value)}
+              placeholder="Nguyễn Văn A"
+            />
+            <FormInput
+              label="Số điện thoại"
+              value={form.phone}
+              onChangeText={value => onChange('phone', value)}
+              placeholder="0901234567"
+              keyboardType="phone-pad"
+            />
+            <FormInput
+              label="CCCD/CMND"
+              value={form.id_number}
+              onChangeText={value => onChange('id_number', value)}
+              placeholder="001234567890"
+              keyboardType="number-pad"
+            />
             <View style={styles.formRow}>
-              <FormInput label="Số GPLX" value={form.license_number} onChangeText={value => onChange('license_number', value)} placeholder="B2-001234" compact />
-              <FormInput label="Hạng bằng" value={form.license_class} onChangeText={value => onChange('license_class', value)} placeholder="D" compact />
+              <FormInput
+                label="Số GPLX"
+                value={form.license_number}
+                onChangeText={value => onChange('license_number', value)}
+                placeholder="B2-001234"
+                compact
+              />
+              <FormInput
+                label="Hạng bằng"
+                value={form.license_class}
+                onChangeText={value => onChange('license_class', value)}
+                placeholder="D"
+                compact
+              />
             </View>
             <View style={styles.formRow}>
               <DateField
@@ -580,7 +706,12 @@ function DriverFormModal({
                 compact
               />
             </View>
-            <FormInput label="Địa chỉ" value={form.address} onChangeText={value => onChange('address', value)} placeholder="Hà Nội" />
+            <FormInput
+              label="Địa chỉ"
+              value={form.address}
+              onChangeText={value => onChange('address', value)}
+              placeholder="Hà Nội"
+            />
             <Text style={styles.formLabel}>Trạng thái</Text>
             <View style={styles.statusOptions}>
               {(Object.keys(statusMeta) as DriverStatus[]).map(status => {
@@ -589,16 +720,33 @@ function DriverFormModal({
                 return (
                   <Pressable
                     key={status}
-                    style={[styles.statusOption, selected && styles.statusOptionSelected]}
+                    style={[
+                      styles.statusOption,
+                      selected && styles.statusOptionSelected,
+                    ]}
                     onPress={() => onChange('status', status)}
                   >
-                    <Ionicons name={meta.icon} size={15} color={selected ? APP_COLORS.surface : meta.color} />
-                    <Text style={[styles.statusOptionText, selected && styles.statusOptionTextSelected]}>{meta.label}</Text>
+                    <Ionicons
+                      name={meta.icon}
+                      size={15}
+                      color={selected ? APP_COLORS.surface : meta.color}
+                    />
+                    <Text
+                      style={[
+                        styles.statusOptionText,
+                        selected && styles.statusOptionTextSelected,
+                      ]}
+                    >
+                      {meta.label}
+                    </Text>
                   </Pressable>
                 );
               })}
             </View>
-            <Pressable style={styles.activeToggle} onPress={() => onChange('is_active', !form.is_active)}>
+            <Pressable
+              style={styles.activeToggle}
+              onPress={() => onChange('is_active', !form.is_active)}
+            >
               <Ionicons
                 name={form.is_active ? 'checkbox-outline' : 'square-outline'}
                 size={20}
@@ -606,16 +754,40 @@ function DriverFormModal({
               />
               <Text style={styles.activeToggleText}>Hồ sơ đang hoạt động</Text>
             </Pressable>
-            <FormInput label="Ghi chú" value={form.notes} onChangeText={value => onChange('notes', value)} placeholder="Ghi chú nội bộ" multiline />
+            <FormInput
+              label="Ghi chú"
+              value={form.notes}
+              onChangeText={value => onChange('notes', value)}
+              placeholder="Ghi chú nội bộ"
+              multiline
+            />
           </ScrollView>
 
           <View style={styles.modalFooter}>
-            <Pressable style={styles.cancelButton} onPress={onClose} disabled={saving}>
+            <Pressable
+              style={styles.cancelButton}
+              onPress={onClose}
+              disabled={saving}
+            >
               <Text style={styles.cancelButtonText}>Huỷ</Text>
             </Pressable>
-            <Pressable style={styles.saveButton} onPress={onSave} disabled={saving}>
-              {saving ? <ActivityIndicator color={APP_COLORS.surface} size="small" /> : <Ionicons name="save-outline" size={17} color={APP_COLORS.surface} />}
-              <Text style={styles.saveButtonText}>{editing ? 'Lưu sửa' : 'Thêm mới'}</Text>
+            <Pressable
+              style={styles.saveButton}
+              onPress={onSave}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color={APP_COLORS.surface} size="small" />
+              ) : (
+                <Ionicons
+                  name="save-outline"
+                  size={17}
+                  color={APP_COLORS.surface}
+                />
+              )}
+              <Text style={styles.saveButtonText}>
+                {editing ? 'Lưu sửa' : 'Thêm mới'}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -660,10 +832,16 @@ function DateField({
     <View style={[styles.formGroup, compact && styles.formGroupCompact]}>
       <Text style={styles.formLabel}>{label}</Text>
       <Pressable style={styles.dateField} onPress={onPress}>
-        <Text style={[styles.dateFieldText, !value && styles.dateFieldPlaceholder]}>
+        <Text
+          style={[styles.dateFieldText, !value && styles.dateFieldPlaceholder]}
+        >
           {value ? formatDate(value) : placeholder}
         </Text>
-        <Ionicons name="calendar-outline" size={17} color={APP_COLORS.primaryDark} />
+        <Ionicons
+          name="calendar-outline"
+          size={17}
+          color={APP_COLORS.primaryDark}
+        />
       </Pressable>
     </View>
   );
@@ -704,7 +882,9 @@ function DatePickerModal({
   const changeYear = (amount: number) => {
     setYear(current => {
       const nextYear = Math.min(2099, Math.max(1940, current + amount));
-      setDay(currentDay => Math.min(currentDay, getDaysInMonth(nextYear, month)));
+      setDay(currentDay =>
+        Math.min(currentDay, getDaysInMonth(nextYear, month)),
+      );
       return nextYear;
     });
   };
@@ -714,7 +894,9 @@ function DatePickerModal({
       const nextMonth = current + amount;
       if (nextMonth < 1) {
         setYear(currentYear => Math.max(1940, currentYear - 1));
-        setDay(currentDay => Math.min(currentDay, getDaysInMonth(year - 1, 12)));
+        setDay(currentDay =>
+          Math.min(currentDay, getDaysInMonth(year - 1, 12)),
+        );
         return 12;
       }
 
@@ -724,7 +906,9 @@ function DatePickerModal({
         return 1;
       }
 
-      setDay(currentDay => Math.min(currentDay, getDaysInMonth(year, nextMonth)));
+      setDay(currentDay =>
+        Math.min(currentDay, getDaysInMonth(year, nextMonth)),
+      );
       return nextMonth;
     });
   };
@@ -734,13 +918,20 @@ function DatePickerModal({
   };
 
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent
+      onRequestClose={onClose}
+    >
       <View style={styles.datePickerOverlay}>
         <View style={styles.datePickerCard}>
           <View style={styles.datePickerHeader}>
             <View>
               <Text style={styles.datePickerTitle}>{title}</Text>
-              <Text style={styles.datePickerPreview}>{formatDate(selectedValue)}</Text>
+              <Text style={styles.datePickerPreview}>
+                {formatDate(selectedValue)}
+              </Text>
             </View>
             <Pressable style={styles.modalCloseButton} onPress={onClose}>
               <Ionicons name="close" size={22} color={APP_COLORS.textPrimary} />
@@ -748,16 +939,34 @@ function DatePickerModal({
           </View>
 
           <View style={styles.dateWheelRow}>
-            <DateStepper label="Ngày" value={padNumber(Math.min(day, maxDay))} onDecrease={() => changeDay(-1)} onIncrease={() => changeDay(1)} />
-            <DateStepper label="Tháng" value={padNumber(month)} onDecrease={() => changeMonth(-1)} onIncrease={() => changeMonth(1)} />
-            <DateStepper label="Năm" value={String(year)} onDecrease={() => changeYear(-1)} onIncrease={() => changeYear(1)} />
+            <DateStepper
+              label="Ngày"
+              value={padNumber(Math.min(day, maxDay))}
+              onDecrease={() => changeDay(-1)}
+              onIncrease={() => changeDay(1)}
+            />
+            <DateStepper
+              label="Tháng"
+              value={padNumber(month)}
+              onDecrease={() => changeMonth(-1)}
+              onIncrease={() => changeMonth(1)}
+            />
+            <DateStepper
+              label="Năm"
+              value={String(year)}
+              onDecrease={() => changeYear(-1)}
+              onIncrease={() => changeYear(1)}
+            />
           </View>
 
           <View style={styles.datePickerFooter}>
             <Pressable style={styles.clearDateButton} onPress={onClear}>
               <Text style={styles.clearDateButtonText}>Xoá ngày</Text>
             </Pressable>
-            <Pressable style={styles.pickDateButton} onPress={() => onSelect(selectedValue)}>
+            <Pressable
+              style={styles.pickDateButton}
+              onPress={() => onSelect(selectedValue)}
+            >
               <Ionicons name="checkmark" size={18} color={APP_COLORS.surface} />
               <Text style={styles.pickDateButtonText}>Chọn</Text>
             </Pressable>
@@ -787,7 +996,11 @@ function DateStepper({
       </Pressable>
       <Text style={styles.dateStepperValue}>{value}</Text>
       <Pressable style={styles.dateStepButton} onPress={onDecrease}>
-        <Ionicons name="chevron-down" size={20} color={APP_COLORS.primaryDark} />
+        <Ionicons
+          name="chevron-down"
+          size={20}
+          color={APP_COLORS.primaryDark}
+        />
       </Pressable>
     </View>
   );
@@ -967,119 +1180,69 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  driverCard: {
+  driverRow: {
     borderWidth: 1,
     borderColor: APP_COLORS.border,
     borderRadius: 12,
-    padding: 14,
+    padding: 10,
     backgroundColor: APP_COLORS.surface,
-    gap: 12,
-  },
-  driverTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 9,
   },
   avatarWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: APP_COLORS.primaryLight,
   },
   avatarText: {
     color: APP_COLORS.primaryDark,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
   },
   driverTitleWrap: {
     flex: 1,
+    minWidth: 0,
+  },
+  driverTitleLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   driverName: {
+    flex: 1,
     color: APP_COLORS.textPrimary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
   },
   driverPhone: {
-    marginTop: 2,
+    marginTop: 4,
     color: APP_COLORS.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '600',
   },
   statusBadge: {
     borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
   },
   statusText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  infoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  infoPill: {
-    width: '48%',
-    minHeight: 52,
-    borderRadius: 10,
-    padding: 9,
-    backgroundColor: APP_COLORS.background,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  infoTextWrap: {
-    flex: 1,
-  },
-  infoLabel: {
-    color: APP_COLORS.textSecondary,
     fontSize: 10,
-    fontWeight: '700',
-  },
-  infoValue: {
-    marginTop: 2,
-    color: APP_COLORS.textPrimary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  noteBox: {
-    borderRadius: 10,
-    padding: 10,
-    backgroundColor: APP_COLORS.primaryLight,
-    gap: 4,
-  },
-  noteText: {
-    color: APP_COLORS.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  cardFooter: {
-    borderTopWidth: 1,
-    borderTopColor: APP_COLORS.border,
-    paddingTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  activeText: {
-    flex: 1,
-    color: APP_COLORS.textSecondary,
-    fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   cardActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   iconButton: {
-    width: 34,
-    height: 34,
+    width: 32,
+    height: 32,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: APP_COLORS.border,

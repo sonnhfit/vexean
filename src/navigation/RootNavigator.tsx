@@ -2,6 +2,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ProfileScreen } from '../screens/account/ProfileScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
+import { VehicleDetailScreen } from '../screens/main/VehicleDetailScreen';
 import { useAppSelector } from '../store/hooks';
 import { APP_COLORS } from '../theme/colors';
 import { RootStackParamList } from '../types/navigation';
@@ -32,11 +33,28 @@ export function RootNavigator() {
     >
       {isAuthenticated ? (
         <>
-          <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
-          <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Hồ sơ cá nhân' }} />
+          <Stack.Screen
+            name="MainTabs"
+            component={MainTabs}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Profile"
+            component={ProfileScreen}
+            options={{ title: 'Hồ sơ cá nhân' }}
+          />
+          <Stack.Screen
+            name="VehicleDetail"
+            component={VehicleDetailScreen}
+            options={{ headerShown: false }}
+          />
         </>
       ) : (
-        <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
+        <Stack.Screen
+          name="Login"
+          component={LoginScreen}
+          options={{ headerShown: false }}
+        />
       )}
     </Stack.Navigator>
   );

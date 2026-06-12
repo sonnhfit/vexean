@@ -2,6 +2,7 @@ export type RootStackParamList = {
   Login: undefined;
   MainTabs: undefined;
   Profile: undefined;
+  VehicleDetail: { vehicleId: number };
 };
 
 export type MainTabParamList = {
