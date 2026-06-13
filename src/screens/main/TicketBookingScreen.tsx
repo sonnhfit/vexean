@@ -75,18 +75,26 @@ type TripsResponse = {
   results: OdooTripSummary[];
 };
 
+type OdooBookedTicket = {
+  id: number;
+  name: string;
+  passenger_name: string;
+  passenger_phone: string;
+  price?: number | string;
+  seat_id?: OdooRelation;
+};
+
+type OdooBookedSeat = {
+  id: number;
+  name: string;
+};
+
 type TicketBookingResponse = {
-  ticket: {
-    id: number;
-    name: string;
-    passenger_name: string;
-    passenger_phone: string;
-    price: number | string;
-  };
-  seat: {
-    id: number;
-    name: string;
-  };
+  tickets?: OdooBookedTicket[];
+  ticket?: OdooBookedTicket;
+  seats?: OdooBookedSeat[];
+  seat?: OdooBookedSeat;
+  total_tickets?: number;
 };
 
 const seatStateMeta: Record<
@@ -118,6 +126,8 @@ const seatStateMeta: Record<
     icon: 'ban-outline',
   },
 };
+
+const MAX_SEATS_PER_BOOKING = 20;
 
 function padDatePart(value: number) {
   return String(value).padStart(2, '0');
@@ -217,7 +227,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
     null,
   );
   const [tripDetail, setTripDetail] = useState<OdooTripDetail | null>(null);
-  const [selectedSeat, setSelectedSeat] = useState<OdooSeat | null>(null);
+  const [selectedSeats, setSelectedSeats] = useState<OdooSeat[]>([]);
   const [passengerName, setPassengerName] = useState(initialPassengerName);
   const [passengerPhone, setPassengerPhone] = useState(initialPhone);
   const [passengerIdNumber, setPassengerIdNumber] = useState('');
@@ -280,7 +290,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   const fetchTripDetail = useCallback(async (trip: OdooTripSummary) => {
     setLoadingDetail(true);
     setDetailError(null);
-    setSelectedSeat(null);
+    setSelectedSeats([]);
 
     try {
       const data = await requestJson<OdooTripDetail>(
@@ -317,7 +327,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
     setTravelDate(value);
     setSelectedTrip(null);
     setTripDetail(null);
-    setSelectedSeat(null);
+    setSelectedSeats([]);
     setDetailError(null);
   };
 
@@ -354,11 +364,38 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   }, [sortedSeats]);
 
   const selectedTripForSummary = tripDetail || selectedTrip;
-  const canBook = Boolean(selectedTripForSummary && selectedSeat && !booking);
+  const selectedSeatNames = selectedSeats.map(seat => seat.name).join(', ');
+  const canBook = Boolean(
+    selectedTripForSummary && selectedSeats.length > 0 && !booking,
+  );
+
+  const toggleSeat = (seat: OdooSeat) => {
+    setSelectedSeats(current => {
+      if (current.some(item => item.id === seat.id)) {
+        return current.filter(item => item.id !== seat.id);
+      }
+
+      if (current.length >= MAX_SEATS_PER_BOOKING) {
+        setDetailError(`Chỉ được chọn tối đa ${MAX_SEATS_PER_BOOKING} ghế/lần.`);
+        return current;
+      }
+
+      setDetailError(null);
+      return [...current, seat].sort((a, b) => {
+        if (a.floor !== b.floor) {
+          return a.floor - b.floor;
+        }
+        if (a.row !== b.row) {
+          return a.row - b.row;
+        }
+        return a.col - b.col;
+      });
+    });
+  };
 
   const submitBooking = async () => {
-    if (!selectedTripForSummary || !selectedSeat) {
-      setDetailError('Vui lòng chọn chuyến và ghế trống.');
+    if (!selectedTripForSummary || selectedSeats.length === 0) {
+      setDetailError('Vui lòng chọn chuyến và ít nhất một ghế trống.');
       return;
     }
 
@@ -369,7 +406,9 @@ export function TicketBookingScreen({ route, navigation }: Props) {
       const passengerId = passengerIdNumber.trim();
       const payload = {
         trip_id: selectedTripForSummary.id,
-        seat_id: selectedSeat.id,
+        ...(selectedSeats.length === 1
+          ? { seat_id: selectedSeats[0].id }
+          : { seat_ids: selectedSeats.map(seat => seat.id) }),
         passenger_name:
           passengerName.trim() || getAutoPassengerName(passengerPhone),
         passenger_phone: passengerPhone.trim(),
@@ -377,7 +416,6 @@ export function TicketBookingScreen({ route, navigation }: Props) {
         create_partner: true,
         note: note.trim(),
       };
-
       const data = await requestJson<TicketBookingResponse>(
         '/api/nhaxe/odoo/book-ticket/',
         {
@@ -387,19 +425,27 @@ export function TicketBookingScreen({ route, navigation }: Props) {
           logLabel: 'odoo-book-ticket',
         },
       );
+      const bookedTickets = data.tickets || (data.ticket ? [data.ticket] : []);
 
       Alert.alert(
         'Đặt vé thành công',
-        `${data.ticket.name} - ghế ${data.seat.name}`,
+        bookedTickets.length > 0
+          ? bookedTickets
+              .map(ticket => {
+                const seatName = relationName(ticket.seat_id);
+                return `${ticket.name}${seatName !== 'Chưa cập nhật' ? ` - ghế ${seatName}` : ''}`;
+              })
+              .join('\n')
+          : `Đã đặt ${data.total_tickets || selectedSeats.length} vé.`,
       );
-      setSelectedSeat(null);
+      setSelectedSeats([]);
       await fetchTripDetail(selectedTripForSummary);
       await fetchTrips('refresh');
     } catch (bookingError) {
       const message =
         bookingError instanceof Error
           ? bookingError.message
-          : 'Không đặt được vé. Vui lòng thử lại.';
+          : 'Không đặt được đủ vé. Vui lòng thử lại.';
       setDetailError(message);
     } finally {
       setBooking(false);
@@ -557,8 +603,8 @@ export function TicketBookingScreen({ route, navigation }: Props) {
               key={floor}
               floor={floor}
               seats={seats}
-              selectedSeatId={selectedSeat?.id}
-              onSelect={setSelectedSeat}
+              selectedSeatIds={selectedSeats.map(seat => seat.id)}
+              onSelect={toggleSeat}
             />
           ))}
 
@@ -622,8 +668,8 @@ export function TicketBookingScreen({ route, navigation }: Props) {
 
           <View style={styles.selectedBox}>
             <Text style={styles.selectedText}>
-              {selectedSeat
-                ? `Ghế đang chọn: ${selectedSeat.name}`
+              {selectedSeats.length > 0
+                ? `Ghế đang chọn (${selectedSeats.length}): ${selectedSeatNames}`
                 : 'Chưa chọn ghế'}
             </Text>
             <Text style={styles.selectedSubText}>
@@ -651,7 +697,9 @@ export function TicketBookingScreen({ route, navigation }: Props) {
                 />
               )}
               <Text style={styles.primaryButtonText}>
-                {booking ? 'Đang đặt vé...' : 'Xác nhận đặt vé'}
+                {booking
+                  ? 'Đang đặt vé...'
+                  : `Xác nhận ${selectedSeats.length || ''} vé`.trim()}
               </Text>
             </View>
           </Pressable>
@@ -696,12 +744,12 @@ function TripMeta({ icon, text }: { icon: IconName; text: string }) {
 function SeatFloor({
   floor,
   seats,
-  selectedSeatId,
+  selectedSeatIds,
   onSelect,
 }: {
   floor: number;
   seats: OdooSeat[];
-  selectedSeatId?: number;
+  selectedSeatIds: number[];
   onSelect: (seat: OdooSeat) => void;
 }) {
   const rows = Array.from(new Set(seats.map(seat => seat.row))).sort(
@@ -721,7 +769,7 @@ function SeatFloor({
             }
 
             const selectable = seat.state === 'available';
-            const selected = seat.id === selectedSeatId;
+            const selected = selectedSeatIds.includes(seat.id);
             const meta = seatStateMeta[seat.state] || seatStateMeta.blocked;
 
             return (

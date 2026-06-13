@@ -12,7 +12,7 @@ export const APP_COLORS = {
   dangerLight: '#ffeded',
   background: '#f5fbfb',
   surface: '#ffffff',
-  textPrimary: '#173b3a',
-  textSecondary: '#4f6e6d',
+  textPrimary: '#000000',
+  textSecondary: '#1f2933',
   border: '#b8e5e3',
 };
