@@ -18,20 +18,12 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
-import { RootStackParamList } from '../../types/navigation';
-import {
-  Vehicle,
-  VehicleListResponse,
-  VehicleStatus,
-} from '../../types/vehicle';
+import { Vehicle, VehicleStatus } from '../../types/vehicle';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
-type RootNavigation = NativeStackNavigationProp<RootStackParamList>;
 
 type VehicleForm = {
   license_plate: string;
@@ -55,7 +47,23 @@ type VehicleForm = {
 
 type VehicleDateField = 'insurance_expiry' | 'registration_expiry';
 
-const VEHICLE_ENDPOINT = '/api/nhaxe/vehicles/';
+type OdooVehicle = {
+  id: number;
+  name: string;
+  license_plate: string;
+  vehicle_type: string;
+  capacity: number;
+  floor_count: number;
+  seat_layout: string;
+  active: boolean;
+  note: string;
+};
+
+type OdooVehicleListResponse = {
+  results?: OdooVehicle[];
+};
+
+const VEHICLE_ENDPOINT = '/api/nhaxe/odoo/vehicles/';
 
 const statusMeta: Record<
   VehicleStatus,
@@ -101,12 +109,34 @@ const emptyForm: VehicleForm = {
   is_active: true,
 };
 
-function normalizeVehicleList(data: VehicleListResponse) {
-  if (Array.isArray(data)) {
-    return data;
-  }
+function mapOdooVehicle(vehicle: OdooVehicle): Vehicle {
+  return {
+    id: vehicle.id,
+    license_plate: vehicle.license_plate || vehicle.name || 'Chưa cập nhật',
+    vehicle_type: null,
+    vehicle_type_name: vehicle.vehicle_type || 'Chưa cập nhật',
+    brand: '',
+    model: vehicle.name || '',
+    year: null,
+    seat_count: vehicle.capacity || null,
+    color: vehicle.seat_layout || '',
+    has_ac: false,
+    has_wifi: false,
+    has_usb: false,
+    has_tv: false,
+    has_toilet: false,
+    notes: vehicle.note || '',
+    status: vehicle.active ? 'active' : 'inactive',
+    insurance_expiry: '',
+    registration_expiry: '',
+    is_active: vehicle.active,
+    created_at: '',
+    updated_at: '',
+  };
+}
 
-  return Array.isArray(data.results) ? data.results : [];
+function normalizeVehicleList(data: OdooVehicleListResponse) {
+  return Array.isArray(data.results) ? data.results.map(mapOdooVehicle) : [];
 }
 
 function toOptionalNumber(value: string) {
@@ -138,28 +168,6 @@ function buildVehiclePayload(form: VehicleForm) {
     insurance_expiry: form.insurance_expiry.trim() || null,
     registration_expiry: form.registration_expiry.trim() || null,
     is_active: form.is_active,
-  };
-}
-
-function createVehicleForm(vehicle: Vehicle): VehicleForm {
-  return {
-    license_plate: vehicle.license_plate || '',
-    vehicle_type: vehicle.vehicle_type ? String(vehicle.vehicle_type) : '',
-    brand: vehicle.brand || '',
-    model: vehicle.model || '',
-    year: vehicle.year ? String(vehicle.year) : '',
-    seat_count: vehicle.seat_count ? String(vehicle.seat_count) : '',
-    color: vehicle.color || '',
-    has_ac: vehicle.has_ac,
-    has_wifi: vehicle.has_wifi,
-    has_usb: vehicle.has_usb,
-    has_tv: vehicle.has_tv,
-    has_toilet: vehicle.has_toilet,
-    notes: vehicle.notes || '',
-    status: vehicle.status || 'active',
-    insurance_expiry: vehicle.insurance_expiry || '',
-    registration_expiry: vehicle.registration_expiry || '',
-    is_active: vehicle.is_active,
   };
 }
 
@@ -200,14 +208,12 @@ function parseDateValue(value: string) {
 }
 
 export function FleetManagementScreen() {
-  const navigation = useNavigation<RootNavigation>();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [searchText, setSearchText] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formModalVisible, setFormModalVisible] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
@@ -237,15 +243,16 @@ export function FleetManagementScreen() {
         if (targetSearch.trim()) {
           params.set('search', targetSearch.trim());
         }
-        params.set('ordering', 'license_plate');
+        params.set('active', 'true');
+        params.set('limit', '200');
 
         const suffix = params.toString() ? `?${params.toString()}` : '';
-        const data = await requestJson<VehicleListResponse>(
+        const data = await requestJson<OdooVehicleListResponse>(
           `${VEHICLE_ENDPOINT}${suffix}`,
           {
             method: 'GET',
             auth: true,
-            logLabel: 'vehicles-list',
+            logLabel: 'odoo-vehicles-list',
           },
         );
 
@@ -287,15 +294,17 @@ export function FleetManagementScreen() {
   };
 
   const openAddModal = () => {
-    setEditingVehicle(null);
-    setForm(emptyForm);
-    setFormModalVisible(true);
+    Alert.alert(
+      'Dữ liệu từ Odoo',
+      'Danh sách xe đang được lấy từ Odoo. Vui lòng thêm hoặc sửa xe trên Odoo.',
+    );
   };
 
-  const openEditModal = (vehicle: Vehicle) => {
-    setEditingVehicle(vehicle);
-    setForm(createVehicleForm(vehicle));
-    setFormModalVisible(true);
+  const openEditModal = () => {
+    Alert.alert(
+      'Dữ liệu từ Odoo',
+      'Thông tin xe đang được đồng bộ từ Odoo. Vui lòng cập nhật trên Odoo.',
+    );
   };
 
   const closeFormModal = () => {
@@ -352,38 +361,16 @@ export function FleetManagementScreen() {
   };
 
   const deleteVehicle = async (vehicle: Vehicle) => {
-    Alert.alert('Xoá xe', `Bạn muốn xoá mềm xe ${vehicle.license_plate}?`, [
-      { text: 'Huỷ', style: 'cancel' },
-      {
-        text: 'Xoá',
-        style: 'destructive',
-        onPress: async () => {
-          setDeletingId(vehicle.id);
-          try {
-            await requestJson<unknown>(`${VEHICLE_ENDPOINT}${vehicle.id}/`, {
-              method: 'DELETE',
-              auth: true,
-              logLabel: 'vehicles-delete',
-            });
-            await fetchVehicles(appliedSearch, 'initial');
-          } catch (deleteError) {
-            const message =
-              deleteError instanceof Error
-                ? deleteError.message
-                : 'Không thể xoá xe.';
-            Alert.alert('Xoá thất bại', message);
-          } finally {
-            setDeletingId(null);
-          }
-        },
-      },
-    ]);
+    Alert.alert(
+      'Dữ liệu từ Odoo',
+      `Xe ${vehicle.license_plate} đang được quản lý trên Odoo. Vui lòng xoá hoặc ngưng hoạt động trên Odoo.`,
+    );
   };
 
   return (
     <ScreenContainer
       title="Quản lý đội xe"
-      subtitle="Tìm kiếm, thêm mới và theo dõi trạng thái xe"
+      subtitle="Danh sách xe đồng bộ từ Odoo"
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -407,7 +394,7 @@ export function FleetManagementScreen() {
             <TextInput
               value={searchText}
               onChangeText={setSearchText}
-              placeholder="Tìm biển số, hãng, dòng xe, màu"
+              placeholder="Tìm biển số hoặc tên xe"
               placeholderTextColor={APP_COLORS.textSecondary}
               style={styles.searchInput}
               returnKeyType="search"
@@ -462,7 +449,7 @@ export function FleetManagementScreen() {
             <Text style={styles.sectionHint}>
               {appliedSearch
                 ? `Kết quả cho "${appliedSearch}"`
-                : 'Sắp xếp theo biển số'}
+                : 'Dữ liệu xe đang hoạt động từ Odoo'}
             </Text>
           </View>
           <Pressable style={styles.addButton} onPress={openAddModal}>
@@ -506,7 +493,7 @@ export function FleetManagementScreen() {
             </View>
             <Text style={styles.feedbackTitle}>Chưa có xe</Text>
             <Text style={styles.feedbackText}>
-              Thêm xe mới để bắt đầu quản lý đội xe.
+              Chưa có xe hoạt động phù hợp trên Odoo.
             </Text>
           </View>
         ) : null}
@@ -516,13 +503,14 @@ export function FleetManagementScreen() {
               <VehicleRow
                 key={vehicle.id}
                 vehicle={vehicle}
-                deleting={deletingId === vehicle.id}
+                deleting={false}
                 onPress={() =>
-                  navigation.navigate('VehicleDetail', {
-                    vehicleId: vehicle.id,
-                  })
+                  Alert.alert(
+                    'Dữ liệu từ Odoo',
+                    'Chi tiết xe đang được quản lý trên Odoo. Vui lòng xem hoặc cập nhật trên Odoo.',
+                  )
                 }
-                onEdit={() => openEditModal(vehicle)}
+                onEdit={openEditModal}
                 onDelete={() => deleteVehicle(vehicle)}
               />
             ))

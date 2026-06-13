@@ -63,13 +63,22 @@ type DriverForm = {
 
 type DriverDateField = 'license_expiry' | 'date_of_birth';
 
-type DriverListResponse =
-  | Driver[]
-  | {
-      results?: Driver[];
-    };
+type OdooDriver = {
+  id: number;
+  name: string;
+  phone: string;
+  license_number: string;
+  license_type: string;
+  license_expiry: string;
+  active: boolean;
+  note: string;
+};
 
-const DRIVER_ENDPOINT = '/api/nhaxe/drivers/';
+type OdooDriverListResponse = {
+  results?: OdooDriver[];
+};
+
+const DRIVER_ENDPOINT = '/api/nhaxe/odoo/drivers/';
 
 const statusMeta: Record<
   DriverStatus,
@@ -115,12 +124,31 @@ const emptyForm: DriverForm = {
   is_active: true,
 };
 
-function normalizeDriverList(data: DriverListResponse) {
-  if (Array.isArray(data)) {
-    return data;
-  }
+function mapOdooDriver(driver: OdooDriver): Driver {
+  return {
+    id: driver.id,
+    user: null,
+    full_name: driver.name || 'Chưa cập nhật',
+    phone: driver.phone || '',
+    id_number: '',
+    license_number: driver.license_number || '',
+    license_class: driver.license_type || '',
+    license_expiry: driver.license_expiry || '',
+    date_of_birth: '',
+    address: '',
+    avatar: null,
+    status: driver.active ? 'available' : 'inactive',
+    assigned_vehicle: null,
+    assigned_vehicle_plate: null,
+    notes: driver.note || '',
+    is_active: driver.active,
+    created_at: '',
+    updated_at: '',
+  };
+}
 
-  return Array.isArray(data.results) ? data.results : [];
+function normalizeDriverList(data: OdooDriverListResponse) {
+  return Array.isArray(data.results) ? data.results.map(mapOdooDriver) : [];
 }
 
 function buildDriverPayload(form: DriverForm) {
@@ -136,22 +164,6 @@ function buildDriverPayload(form: DriverForm) {
     status: form.status,
     notes: form.notes.trim(),
     is_active: form.is_active,
-  };
-}
-
-function createDriverForm(driver: Driver): DriverForm {
-  return {
-    full_name: driver.full_name || '',
-    phone: driver.phone || '',
-    id_number: driver.id_number || '',
-    license_number: driver.license_number || '',
-    license_class: driver.license_class || '',
-    license_expiry: driver.license_expiry || '',
-    date_of_birth: driver.date_of_birth || '',
-    address: driver.address || '',
-    status: driver.status || 'available',
-    notes: driver.notes || '',
-    is_active: driver.is_active,
   };
 }
 
@@ -198,7 +210,6 @@ export function DriverManagementScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formModalVisible, setFormModalVisible] = useState(false);
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
@@ -228,15 +239,16 @@ export function DriverManagementScreen() {
         if (targetSearch.trim()) {
           params.set('search', targetSearch.trim());
         }
-        params.set('ordering', 'full_name');
+        params.set('active', 'true');
+        params.set('limit', '200');
 
         const suffix = params.toString() ? `?${params.toString()}` : '';
-        const data = await requestJson<DriverListResponse>(
+        const data = await requestJson<OdooDriverListResponse>(
           `${DRIVER_ENDPOINT}${suffix}`,
           {
             method: 'GET',
             auth: true,
-            logLabel: 'drivers-list',
+            logLabel: 'odoo-drivers-list',
           },
         );
 
@@ -278,15 +290,17 @@ export function DriverManagementScreen() {
   };
 
   const openAddModal = () => {
-    setEditingDriver(null);
-    setForm(emptyForm);
-    setFormModalVisible(true);
+    Alert.alert(
+      'Dữ liệu từ Odoo',
+      'Danh sách tài xế đang được lấy từ Odoo. Vui lòng thêm hoặc sửa tài xế trên Odoo.',
+    );
   };
 
-  const openEditModal = (driver: Driver) => {
-    setEditingDriver(driver);
-    setForm(createDriverForm(driver));
-    setFormModalVisible(true);
+  const openEditModal = () => {
+    Alert.alert(
+      'Dữ liệu từ Odoo',
+      'Thông tin tài xế đang được đồng bộ từ Odoo. Vui lòng cập nhật trên Odoo.',
+    );
   };
 
   const closeFormModal = () => {
@@ -344,38 +358,16 @@ export function DriverManagementScreen() {
   };
 
   const deleteDriver = async (driver: Driver) => {
-    Alert.alert('Xoá tài xế', `Bạn muốn xoá mềm hồ sơ ${driver.full_name}?`, [
-      { text: 'Huỷ', style: 'cancel' },
-      {
-        text: 'Xoá',
-        style: 'destructive',
-        onPress: async () => {
-          setDeletingId(driver.id);
-          try {
-            await requestJson<unknown>(`${DRIVER_ENDPOINT}${driver.id}/`, {
-              method: 'DELETE',
-              auth: true,
-              logLabel: 'drivers-delete',
-            });
-            await fetchDrivers(appliedSearch, 'initial');
-          } catch (deleteError) {
-            const message =
-              deleteError instanceof Error
-                ? deleteError.message
-                : 'Không thể xoá tài xế.';
-            Alert.alert('Xoá thất bại', message);
-          } finally {
-            setDeletingId(null);
-          }
-        },
-      },
-    ]);
+    Alert.alert(
+      'Dữ liệu từ Odoo',
+      `Tài xế ${driver.full_name} đang được quản lý trên Odoo. Vui lòng xoá hoặc ngưng hoạt động trên Odoo.`,
+    );
   };
 
   return (
     <ScreenContainer
       title="Quản lý tài xế"
-      subtitle="Tìm kiếm, thêm mới và quản lý hồ sơ tài xế"
+      subtitle="Danh sách tài xế đồng bộ từ Odoo"
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -399,7 +391,7 @@ export function DriverManagementScreen() {
             <TextInput
               value={searchText}
               onChangeText={setSearchText}
-              placeholder="Tìm theo tên, SĐT, GPLX, CCCD"
+              placeholder="Tìm theo tên, SĐT hoặc số bằng lái"
               placeholderTextColor={APP_COLORS.textSecondary}
               style={styles.searchInput}
               returnKeyType="search"
@@ -454,7 +446,7 @@ export function DriverManagementScreen() {
             <Text style={styles.sectionHint}>
               {appliedSearch
                 ? `Kết quả cho "${appliedSearch}"`
-                : 'Sắp xếp theo họ tên'}
+                : 'Dữ liệu tài xế đang hoạt động từ Odoo'}
             </Text>
           </View>
           <Pressable style={styles.addButton} onPress={openAddModal}>
@@ -500,7 +492,7 @@ export function DriverManagementScreen() {
             </View>
             <Text style={styles.feedbackTitle}>Chưa có tài xế</Text>
             <Text style={styles.feedbackText}>
-              Thêm hồ sơ tài xế mới để bắt đầu quản lý phân công xe.
+              Chưa có tài xế hoạt động phù hợp trên Odoo.
             </Text>
           </View>
         ) : null}
@@ -510,8 +502,8 @@ export function DriverManagementScreen() {
               <DriverCard
                 key={driver.id}
                 driver={driver}
-                deleting={deletingId === driver.id}
-                onEdit={() => openEditModal(driver)}
+                deleting={false}
+                onEdit={openEditModal}
                 onDelete={() => deleteDriver(driver)}
               />
             ))
