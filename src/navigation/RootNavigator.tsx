@@ -2,6 +2,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ProfileScreen } from '../screens/account/ProfileScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
+import { TicketBookingScreen } from '../screens/main/TicketBookingScreen';
 import { VehicleDetailScreen } from '../screens/main/VehicleDetailScreen';
 import { useAppSelector } from '../store/hooks';
 import { APP_COLORS } from '../theme/colors';
@@ -46,6 +47,11 @@ export function RootNavigator() {
           <Stack.Screen
             name="VehicleDetail"
             component={VehicleDetailScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="TicketBooking"
+            component={TicketBookingScreen}
             options={{ headerShown: false }}
           />
         </>

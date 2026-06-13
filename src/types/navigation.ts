@@ -3,6 +3,10 @@ export type RootStackParamList = {
   MainTabs: undefined;
   Profile: undefined;
   VehicleDetail: { vehicleId: number };
+  TicketBooking: {
+    initialPhone?: string;
+    initialPassengerName?: string;
+  } | undefined;
 };
 
 export type MainTabParamList = {

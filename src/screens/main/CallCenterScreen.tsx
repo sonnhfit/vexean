@@ -1,9 +1,21 @@
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
+import { RootStackParamList } from '../../types/navigation';
 
 type PassengerBooking = {
   id: number;
@@ -38,6 +50,7 @@ type LookupResponse = {
 
 type ViewMode = 'lookup' | 'detail';
 type ScheduleType = 'appointment' | 'pickup';
+type RootNavigation = NativeStackNavigationProp<RootStackParamList>;
 
 function formatDateTime(value: string) {
   const date = new Date(value);
@@ -49,6 +62,7 @@ function formatDateTime(value: string) {
 }
 
 export function CallCenterScreen() {
+  const navigation = useNavigation<RootNavigation>();
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -56,7 +70,8 @@ export function CallCenterScreen() {
   const [result, setResult] = useState<LookupResponse | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('lookup');
   const [isFormModalVisible, setFormModalVisible] = useState(false);
-  const [activeFormType, setActiveFormType] = useState<ScheduleType>('appointment');
+  const [activeFormType, setActiveFormType] =
+    useState<ScheduleType>('appointment');
 
   const [appointmentName, setAppointmentName] = useState('');
   const [appointmentTitle, setAppointmentTitle] = useState('');
@@ -79,11 +94,14 @@ export function CallCenterScreen() {
   }, [result]);
 
   const fetchLookup = async (targetPhone: string) => {
-    const data = await requestJson<LookupResponse>(`/api/nhaxe/lookup/?phone=${encodeURIComponent(targetPhone)}`, {
-      method: 'GET',
-      auth: true,
-      logLabel: 'nhaxe-lookup',
-    });
+    const data = await requestJson<LookupResponse>(
+      `/api/nhaxe/lookup/?phone=${encodeURIComponent(targetPhone)}`,
+      {
+        method: 'GET',
+        auth: true,
+        logLabel: 'nhaxe-lookup',
+      },
+    );
 
     setResult(data);
     setViewMode('detail');
@@ -102,7 +120,10 @@ export function CallCenterScreen() {
     try {
       await fetchLookup(normalizedPhone);
     } catch (lookupError) {
-      const message = lookupError instanceof Error ? lookupError.message : 'Tra cứu thất bại. Vui lòng thử lại.';
+      const message =
+        lookupError instanceof Error
+          ? lookupError.message
+          : 'Tra cứu thất bại. Vui lòng thử lại.';
       setError(message);
     } finally {
       setLoading(false);
@@ -114,7 +135,8 @@ export function CallCenterScreen() {
       return;
     }
 
-    const targetPhone = (viewMode === 'detail' ? result?.phone : phone)?.trim() || '';
+    const targetPhone =
+      (viewMode === 'detail' ? result?.phone : phone)?.trim() || '';
     if (!targetPhone) {
       return;
     }
@@ -125,7 +147,10 @@ export function CallCenterScreen() {
     try {
       await fetchLookup(targetPhone);
     } catch (lookupError) {
-      const message = lookupError instanceof Error ? lookupError.message : 'Làm mới thất bại. Vui lòng thử lại.';
+      const message =
+        lookupError instanceof Error
+          ? lookupError.message
+          : 'Làm mới thất bại. Vui lòng thử lại.';
       setError(message);
     } finally {
       setRefreshing(false);
@@ -141,8 +166,20 @@ export function CallCenterScreen() {
     setFormModalVisible(true);
   };
 
+  const openTicketBookingScreen = () => {
+    const knownPhone = result?.phone || phone;
+    navigation.navigate('TicketBooking', {
+      initialPhone: knownPhone.trim(),
+    });
+  };
+
   const addAppointment = () => {
-    if (!appointmentName || !appointmentTitle || !appointmentDate || !appointmentTime) {
+    if (
+      !appointmentName ||
+      !appointmentTitle ||
+      !appointmentDate ||
+      !appointmentTime
+    ) {
       return;
     }
 
@@ -169,12 +206,22 @@ export function CallCenterScreen() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.contentContainer}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={APP_COLORS.primaryDark} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={APP_COLORS.primaryDark}
+            />
+          }
         >
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <View style={styles.sectionIconWrap}>
-                <Ionicons name="person-circle-outline" size={16} color={APP_COLORS.primaryDark} />
+                <Ionicons
+                  name="person-circle-outline"
+                  size={16}
+                  color={APP_COLORS.primaryDark}
+                />
               </View>
               <Text style={styles.sectionTitle}>Thông tin tra cứu</Text>
             </View>
@@ -183,20 +230,60 @@ export function CallCenterScreen() {
           </View>
 
           <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionIconWrap}>
+                <Ionicons
+                  name="ticket-outline"
+                  size={16}
+                  color={APP_COLORS.primaryDark}
+                />
+              </View>
+              <Text style={styles.sectionTitle}>Đặt vé Odoo</Text>
+            </View>
+            <Pressable
+              style={styles.primaryButton}
+              onPress={openTicketBookingScreen}
+            >
+              <View style={styles.buttonContent}>
+                <Ionicons
+                  name="ticket-outline"
+                  size={16}
+                  color={APP_COLORS.surface}
+                />
+                <Text style={styles.primaryButtonText}>Đặt vé</Text>
+              </View>
+            </Pressable>
+          </View>
+
+          <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Lịch sử đặt vé hành khách</Text>
             {result.passenger_bookings.length === 0 ? (
-              <Text style={styles.emptyText}>Không có lịch sử đặt vé hành khách.</Text>
+              <Text style={styles.emptyText}>
+                Không có lịch sử đặt vé hành khách.
+              </Text>
             ) : (
               result.passenger_bookings.map(item => (
                 <View key={`passenger-${item.id}`} style={styles.itemCard}>
                   <Text style={styles.itemTitle}>{item.booking_code}</Text>
-                  <Text style={styles.itemMeta}>Khách: {item.passenger_name}</Text>
-                  <Text style={styles.itemMeta}>SĐT: {item.passenger_phone}</Text>
-                  <Text style={styles.itemMeta}>Điểm đón: {item.pickup_location}</Text>
-                  <Text style={styles.itemMeta}>Điểm trả: {item.dropoff_location}</Text>
-                  <Text style={styles.itemMeta}>Thanh toán: {item.total_amount} ({item.payment_status})</Text>
+                  <Text style={styles.itemMeta}>
+                    Khách: {item.passenger_name}
+                  </Text>
+                  <Text style={styles.itemMeta}>
+                    SĐT: {item.passenger_phone}
+                  </Text>
+                  <Text style={styles.itemMeta}>
+                    Điểm đón: {item.pickup_location}
+                  </Text>
+                  <Text style={styles.itemMeta}>
+                    Điểm trả: {item.dropoff_location}
+                  </Text>
+                  <Text style={styles.itemMeta}>
+                    Thanh toán: {item.total_amount} ({item.payment_status})
+                  </Text>
                   <Text style={styles.itemMeta}>Trạng thái: {item.status}</Text>
-                  <Text style={styles.itemMeta}>Tạo lúc: {formatDateTime(item.created_at)}</Text>
+                  <Text style={styles.itemMeta}>
+                    Tạo lúc: {formatDateTime(item.created_at)}
+                  </Text>
                 </View>
               ))
             )}
@@ -205,17 +292,29 @@ export function CallCenterScreen() {
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Lịch sử đơn hàng hoá</Text>
             {result.cargo_bookings.length === 0 ? (
-              <Text style={styles.emptyText}>Không có lịch sử đơn hàng hoá.</Text>
+              <Text style={styles.emptyText}>
+                Không có lịch sử đơn hàng hoá.
+              </Text>
             ) : (
               result.cargo_bookings.map(item => (
                 <View key={`cargo-${item.id}`} style={styles.itemCard}>
                   <Text style={styles.itemTitle}>{item.booking_code}</Text>
-                  <Text style={styles.itemMeta}>Người gửi: {item.sender_name} ({item.sender_phone})</Text>
-                  <Text style={styles.itemMeta}>Người nhận: {item.receiver_name}</Text>
-                  <Text style={styles.itemMeta}>Nơi giao: {item.delivery_location}</Text>
-                  <Text style={styles.itemMeta}>Cước phí: {item.shipping_fee}</Text>
+                  <Text style={styles.itemMeta}>
+                    Người gửi: {item.sender_name} ({item.sender_phone})
+                  </Text>
+                  <Text style={styles.itemMeta}>
+                    Người nhận: {item.receiver_name}
+                  </Text>
+                  <Text style={styles.itemMeta}>
+                    Nơi giao: {item.delivery_location}
+                  </Text>
+                  <Text style={styles.itemMeta}>
+                    Cước phí: {item.shipping_fee}
+                  </Text>
                   <Text style={styles.itemMeta}>Trạng thái: {item.status}</Text>
-                  <Text style={styles.itemMeta}>Tạo lúc: {formatDateTime(item.created_at)}</Text>
+                  <Text style={styles.itemMeta}>
+                    Tạo lúc: {formatDateTime(item.created_at)}
+                  </Text>
                 </View>
               ))
             )}
@@ -223,7 +322,11 @@ export function CallCenterScreen() {
 
           <Pressable style={styles.secondaryButton} onPress={goBackToLookup}>
             <View style={styles.buttonContent}>
-              <Ionicons name="arrow-back-outline" size={16} color={APP_COLORS.primaryDark} />
+              <Ionicons
+                name="arrow-back-outline"
+                size={16}
+                color={APP_COLORS.primaryDark}
+              />
               <Text style={styles.secondaryButtonText}>Back</Text>
             </View>
           </Pressable>
@@ -233,31 +336,64 @@ export function CallCenterScreen() {
   }
 
   return (
-    <ScreenContainer title="Tổng Đài" subtitle="Tra cứu lịch sử theo số điện thoại">
+    <ScreenContainer
+      title="Tổng Đài"
+      subtitle="Tra cứu lịch sử theo số điện thoại"
+    >
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={APP_COLORS.primaryDark} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={APP_COLORS.primaryDark}
+          />
+        }
       >
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionIconWrap}>
-              <Ionicons name="add-circle-outline" size={16} color={APP_COLORS.primaryDark} />
+              <Ionicons
+                name="add-circle-outline"
+                size={16}
+                color={APP_COLORS.primaryDark}
+              />
             </View>
             <Text style={styles.sectionTitle}>Tạo lịch mới</Text>
           </View>
-          <Text style={styles.sectionHint}>Chọn loại lịch cần thêm để mở biểu mẫu.</Text>
+          <Text style={styles.sectionHint}>
+            Chọn loại lịch cần thêm để mở biểu mẫu.
+          </Text>
           <View style={styles.actionRow}>
-            <Pressable style={styles.primaryButton} onPress={() => openFormModal('appointment')}>
+            <Pressable
+              style={styles.primaryButton}
+              onPress={() => openFormModal('appointment')}
+            >
               <View style={styles.buttonContent}>
-                <Ionicons name="calendar-outline" size={16} color={APP_COLORS.surface} />
-                <Text style={styles.primaryButtonText}>Thêm lịch hẹn khách</Text>
+                <Ionicons
+                  name="calendar-outline"
+                  size={16}
+                  color={APP_COLORS.surface}
+                />
+                <Text style={styles.primaryButtonText}>
+                  Thêm lịch hẹn khách
+                </Text>
               </View>
             </Pressable>
-            <Pressable style={styles.secondaryButton} onPress={() => openFormModal('pickup')}>
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => openFormModal('pickup')}
+            >
               <View style={styles.buttonContent}>
-                <Ionicons name="cube-outline" size={16} color={APP_COLORS.primaryDark} />
-                <Text style={styles.secondaryButtonText}>Thêm lịch lấy hàng</Text>
+                <Ionicons
+                  name="cube-outline"
+                  size={16}
+                  color={APP_COLORS.primaryDark}
+                />
+                <Text style={styles.secondaryButtonText}>
+                  Thêm lịch lấy hàng
+                </Text>
               </View>
             </Pressable>
           </View>
@@ -266,7 +402,40 @@ export function CallCenterScreen() {
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionIconWrap}>
-              <Ionicons name="search-outline" size={16} color={APP_COLORS.primaryDark} />
+              <Ionicons
+                name="ticket-outline"
+                size={16}
+                color={APP_COLORS.primaryDark}
+              />
+            </View>
+            <Text style={styles.sectionTitle}>Đặt vé Odoo</Text>
+          </View>
+          <Text style={styles.sectionHint}>
+            Chọn chuyến và bấm ghế trống để tạo vé nhanh cho khách gọi tổng đài.
+          </Text>
+          <Pressable
+            style={styles.primaryButton}
+            onPress={openTicketBookingScreen}
+          >
+            <View style={styles.buttonContent}>
+              <Ionicons
+                name="ticket-outline"
+                size={16}
+                color={APP_COLORS.surface}
+              />
+              <Text style={styles.primaryButtonText}>Đặt vé</Text>
+            </View>
+          </Pressable>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeaderRow}>
+            <View style={styles.sectionIconWrap}>
+              <Ionicons
+                name="search-outline"
+                size={16}
+                color={APP_COLORS.primaryDark}
+              />
             </View>
             <Text style={styles.sectionTitle}>Tra cứu theo Số Điện Thoại</Text>
           </View>
@@ -285,10 +454,16 @@ export function CallCenterScreen() {
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          <Pressable style={[styles.primaryButton, loading && styles.disabledButton]} disabled={loading} onPress={lookupByPhone}>
+          <Pressable
+            style={[styles.primaryButton, loading && styles.disabledButton]}
+            disabled={loading}
+            onPress={lookupByPhone}
+          >
             <View style={styles.buttonContent}>
               <Ionicons name="search" size={16} color={APP_COLORS.surface} />
-              <Text style={styles.primaryButtonText}>{loading ? 'Đang tra cứu...' : 'Tra cứu'}</Text>
+              <Text style={styles.primaryButtonText}>
+                {loading ? 'Đang tra cứu...' : 'Tra cứu'}
+              </Text>
             </View>
           </Pressable>
         </View>
@@ -305,13 +480,19 @@ export function CallCenterScreen() {
             <View style={styles.sectionHeaderRow}>
               <View style={styles.sectionIconWrap}>
                 <Ionicons
-                  name={activeFormType === 'appointment' ? 'calendar-outline' : 'cube-outline'}
+                  name={
+                    activeFormType === 'appointment'
+                      ? 'calendar-outline'
+                      : 'cube-outline'
+                  }
                   size={16}
                   color={APP_COLORS.primaryDark}
                 />
               </View>
               <Text style={styles.sectionTitle}>
-                {activeFormType === 'appointment' ? 'Thêm lịch hẹn khách' : 'Thêm lịch trình lấy hàng'}
+                {activeFormType === 'appointment'
+                  ? 'Thêm lịch hẹn khách'
+                  : 'Thêm lịch trình lấy hàng'}
               </Text>
             </View>
 
@@ -374,9 +555,16 @@ export function CallCenterScreen() {
                   />
                 </View>
 
-                <Pressable style={styles.primaryButton} onPress={addAppointment}>
+                <Pressable
+                  style={styles.primaryButton}
+                  onPress={addAppointment}
+                >
                   <View style={styles.buttonContent}>
-                    <Ionicons name="save-outline" size={16} color={APP_COLORS.surface} />
+                    <Ionicons
+                      name="save-outline"
+                      size={16}
+                      color={APP_COLORS.surface}
+                    />
                     <Text style={styles.primaryButtonText}>Lưu lịch hẹn</Text>
                   </View>
                 </Pressable>
@@ -442,16 +630,29 @@ export function CallCenterScreen() {
 
                 <Pressable style={styles.primaryButton} onPress={addPickup}>
                   <View style={styles.buttonContent}>
-                    <Ionicons name="save-outline" size={16} color={APP_COLORS.surface} />
-                    <Text style={styles.primaryButtonText}>Lưu lịch lấy hàng</Text>
+                    <Ionicons
+                      name="save-outline"
+                      size={16}
+                      color={APP_COLORS.surface}
+                    />
+                    <Text style={styles.primaryButtonText}>
+                      Lưu lịch lấy hàng
+                    </Text>
                   </View>
                 </Pressable>
               </>
             )}
 
-            <Pressable style={styles.modalCloseButton} onPress={() => setFormModalVisible(false)}>
+            <Pressable
+              style={styles.modalCloseButton}
+              onPress={() => setFormModalVisible(false)}
+            >
               <View style={styles.buttonContent}>
-                <Ionicons name="close-outline" size={16} color={APP_COLORS.textSecondary} />
+                <Ionicons
+                  name="close-outline"
+                  size={16}
+                  color={APP_COLORS.textSecondary}
+                />
                 <Text style={styles.modalCloseText}>Đóng</Text>
               </View>
             </Pressable>
@@ -580,6 +781,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 3,
   },
+  successBox: {
+    borderWidth: 1,
+    borderColor: APP_COLORS.successLight,
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: APP_COLORS.successLight,
+    marginBottom: 10,
+  },
+  successTitle: {
+    color: APP_COLORS.success,
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
   itemCard: {
     borderWidth: 1,
     borderColor: APP_COLORS.border,
@@ -611,6 +826,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   modalCard: {
+    maxHeight: '90%',
     backgroundColor: APP_COLORS.surface,
     borderRadius: 14,
     padding: 14,

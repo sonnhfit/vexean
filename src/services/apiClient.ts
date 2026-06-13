@@ -41,7 +41,7 @@ function isJsonBody(body: unknown) {
 }
 
 function escapeShell(value: string) {
-  return `'${value.replace(/'/g, `'\''`)}'`;
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function buildFullUrl(pathOrUrl: string) {
@@ -58,7 +58,8 @@ function buildCurlCommand(url: string, init: RequestInit) {
   const parts = ['curl', '-X', method];
 
   headers.forEach((value, key) => {
-    const maskedValue = key.toLowerCase() === 'authorization' ? 'Bearer <redacted>' : value;
+    const maskedValue =
+      key.toLowerCase() === 'authorization' ? 'Bearer <redacted>' : value;
     parts.push('-H', escapeShell(`${key}: ${maskedValue}`));
   });
 
@@ -122,11 +123,42 @@ async function readResponseBody(response: Response) {
   }
 }
 
-export async function requestJson<T>(pathOrUrl: string, options: ApiRequestOptions = {}): Promise<T> {
+function extractApiErrorMessage(responseBody: unknown) {
+  if (!responseBody || typeof responseBody !== 'object') {
+    return undefined;
+  }
+
+  const data = responseBody as Record<string, unknown>;
+  if (typeof data.detail === 'string') {
+    return data.detail;
+  }
+
+  if (
+    Array.isArray(data.non_field_errors) &&
+    typeof data.non_field_errors[0] === 'string'
+  ) {
+    return data.non_field_errors[0];
+  }
+
+  for (const value of Object.values(data)) {
+    if (Array.isArray(value) && typeof value[0] === 'string') {
+      return value[0];
+    }
+  }
+
+  return undefined;
+}
+
+export async function requestJson<T>(
+  pathOrUrl: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
   const { body, headers, logLabel, auth, ...rest } = options;
   const url = buildFullUrl(pathOrUrl);
 
-  const finalHeaders = new Headers(headers as Record<string, string> | undefined);
+  const finalHeaders = new Headers(
+    headers as Record<string, string> | undefined,
+  );
   finalHeaders.set('Accept', 'application/json');
 
   const authHeader = await getAuthHeader(auth);
@@ -134,11 +166,17 @@ export async function requestJson<T>(pathOrUrl: string, options: ApiRequestOptio
     finalHeaders.set('Authorization', authHeader);
   }
 
-  let finalBody: RequestInit['body'] = undefined;
+  let finalBody: RequestInit['body'];
   if (isJsonBody(body)) {
     finalHeaders.set('Content-Type', 'application/json');
     finalBody = JSON.stringify(body);
-  } else if (typeof body === 'string' || body instanceof FormData || body instanceof Blob || body instanceof ArrayBuffer || body instanceof URLSearchParams) {
+  } else if (
+    typeof body === 'string' ||
+    body instanceof FormData ||
+    body instanceof Blob ||
+    body instanceof ArrayBuffer ||
+    body instanceof URLSearchParams
+  ) {
     finalBody = body as RequestInit['body'];
   }
 
@@ -163,9 +201,7 @@ export async function requestJson<T>(pathOrUrl: string, options: ApiRequestOptio
 
   if (!response.ok) {
     const message =
-      (responseBody && typeof responseBody === 'object' && 'detail' in responseBody && typeof (responseBody as Record<string, unknown>).detail === 'string'
-        ? (responseBody as Record<string, string>).detail
-        : undefined) ||
+      extractApiErrorMessage(responseBody) ||
       `Request failed with status ${response.status}`;
     logApi(`[api${logLabel ? `:${logLabel}` : ''}] error`, {
       url,
