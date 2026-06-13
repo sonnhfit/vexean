@@ -6,6 +6,7 @@ import { useAppSelector } from '../store/hooks';
 import { AdminScreen } from '../screens/main/AdminScreen';
 import { CallCenterScreen } from '../screens/main/CallCenterScreen';
 import { CargoScreen } from '../screens/main/CargoScreen';
+import { CustomerHomeScreen } from '../screens/main/CustomerHomeScreen';
 import { DashboardScreen } from '../screens/main/DashboardScreen';
 import { DriverManagementScreen } from '../screens/main/DriverManagementScreen';
 import { FleetManagementScreen } from '../screens/main/FleetManagementScreen';
@@ -25,6 +26,7 @@ function createTabBarIcon(activeIcon: IconName, inactiveIcon: IconName): BottomT
 }
 
 const dashboardIcon = createTabBarIcon('grid', 'grid-outline');
+const customerHomeIcon = createTabBarIcon('home', 'home-outline');
 const passengersIcon = createTabBarIcon('people', 'people-outline');
 const fleetIcon = createTabBarIcon('bus', 'bus-outline');
 const cargoIcon = createTabBarIcon('cube', 'cube-outline');
@@ -39,6 +41,41 @@ export function MainTabs() {
   const role = (user?.role || '').toLowerCase();
   const isAdmin = role === 'admin';
   const isCallCenter = role === 'callcenter' || role === 'call_center' || role === 'tongdai' || role === 'tong_dai';
+  const isCustomer =
+    role === 'customer' ||
+    role === 'client' ||
+    role === 'passenger' ||
+    role === 'khachhang' ||
+    role === 'khach_hang';
+
+  if (isCustomer) {
+    return (
+      <Tab.Navigator
+        screenOptions={{
+          headerTitleAlign: 'center',
+          headerStyle: { backgroundColor: APP_COLORS.primary },
+          headerTintColor: APP_COLORS.surface,
+          tabBarActiveTintColor: APP_COLORS.primary,
+          tabBarInactiveTintColor: APP_COLORS.textSecondary,
+          tabBarStyle: {
+            borderTopColor: APP_COLORS.border,
+            backgroundColor: APP_COLORS.surface,
+          },
+        }}
+      >
+        <Tab.Screen
+          name="CustomerHome"
+          component={CustomerHomeScreen}
+          options={{ title: 'Trang chủ', tabBarIcon: customerHomeIcon }}
+        />
+        <Tab.Screen
+          name="Account"
+          component={AccountScreen}
+          options={{ title: 'Tài khoản', tabBarIcon: accountIcon }}
+        />
+      </Tab.Navigator>
+    );
+  }
 
   return (
     <Tab.Navigator
