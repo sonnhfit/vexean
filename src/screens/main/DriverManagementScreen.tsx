@@ -153,17 +153,29 @@ function normalizeDriverList(data: OdooDriverListResponse) {
 
 function buildDriverPayload(form: DriverForm) {
   return {
-    full_name: form.full_name.trim(),
+    name: form.full_name.trim(),
     phone: form.phone.trim(),
-    id_number: form.id_number.trim(),
     license_number: form.license_number.trim(),
-    license_class: form.license_class.trim(),
+    license_type: form.license_class.trim() || 'd',
     license_expiry: form.license_expiry.trim() || null,
-    date_of_birth: form.date_of_birth.trim() || null,
-    address: form.address.trim(),
-    status: form.status,
-    notes: form.notes.trim(),
-    is_active: form.is_active,
+    active: form.is_active,
+    note: form.notes.trim(),
+  };
+}
+
+function createDriverForm(driver: Driver): DriverForm {
+  return {
+    full_name: driver.full_name || '',
+    phone: driver.phone || '',
+    id_number: '',
+    license_number: driver.license_number || '',
+    license_class: driver.license_class || 'd',
+    license_expiry: driver.license_expiry || '',
+    date_of_birth: '',
+    address: '',
+    status: driver.status || 'available',
+    notes: driver.notes || '',
+    is_active: driver.is_active,
   };
 }
 
@@ -210,6 +222,7 @@ export function DriverManagementScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formModalVisible, setFormModalVisible] = useState(false);
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
@@ -290,17 +303,15 @@ export function DriverManagementScreen() {
   };
 
   const openAddModal = () => {
-    Alert.alert(
-      'Dữ liệu từ Odoo',
-      'Danh sách tài xế đang được lấy từ Odoo. Vui lòng thêm hoặc sửa tài xế trên Odoo.',
-    );
+    setEditingDriver(null);
+    setForm(emptyForm);
+    setFormModalVisible(true);
   };
 
-  const openEditModal = () => {
-    Alert.alert(
-      'Dữ liệu từ Odoo',
-      'Thông tin tài xế đang được đồng bộ từ Odoo. Vui lòng cập nhật trên Odoo.',
-    );
+  const openEditModal = (driver: Driver) => {
+    setEditingDriver(driver);
+    setForm(createDriverForm(driver));
+    setFormModalVisible(true);
   };
 
   const closeFormModal = () => {
@@ -321,10 +332,10 @@ export function DriverManagementScreen() {
   };
 
   const saveDriver = async () => {
-    if (!form.full_name.trim() || !form.phone.trim()) {
+    if (!form.full_name.trim() || !form.license_number.trim()) {
       Alert.alert(
         'Thiếu thông tin',
-        'Vui lòng nhập họ tên và số điện thoại tài xế.',
+        'Vui lòng nhập họ tên và số bằng lái tài xế.',
       );
       return;
     }
@@ -332,13 +343,13 @@ export function DriverManagementScreen() {
     setSaving(true);
     try {
       const isEditing = Boolean(editingDriver);
-      await requestJson<Driver>(
+      await requestJson<OdooDriver>(
         isEditing ? `${DRIVER_ENDPOINT}${editingDriver?.id}/` : DRIVER_ENDPOINT,
         {
           method: isEditing ? 'PATCH' : 'POST',
           auth: true,
           body: buildDriverPayload(form),
-          logLabel: isEditing ? 'drivers-update' : 'drivers-create',
+          logLabel: isEditing ? 'odoo-drivers-update' : 'odoo-drivers-create',
         },
       );
 
@@ -358,10 +369,32 @@ export function DriverManagementScreen() {
   };
 
   const deleteDriver = async (driver: Driver) => {
-    Alert.alert(
-      'Dữ liệu từ Odoo',
-      `Tài xế ${driver.full_name} đang được quản lý trên Odoo. Vui lòng xoá hoặc ngưng hoạt động trên Odoo.`,
-    );
+    Alert.alert('Xoá tài xế', `Bạn muốn xoá mềm hồ sơ ${driver.full_name}?`, [
+      { text: 'Huỷ', style: 'cancel' },
+      {
+        text: 'Xoá',
+        style: 'destructive',
+        onPress: async () => {
+          setDeletingId(driver.id);
+          try {
+            await requestJson<unknown>(`${DRIVER_ENDPOINT}${driver.id}/`, {
+              method: 'DELETE',
+              auth: true,
+              logLabel: 'odoo-drivers-delete',
+            });
+            await fetchDrivers(appliedSearch, 'initial');
+          } catch (deleteError) {
+            const message =
+              deleteError instanceof Error
+                ? deleteError.message
+                : 'Không thể xoá tài xế.';
+            Alert.alert('Xoá thất bại', message);
+          } finally {
+            setDeletingId(null);
+          }
+        },
+      },
+    ]);
   };
 
   return (
@@ -502,8 +535,8 @@ export function DriverManagementScreen() {
               <DriverCard
                 key={driver.id}
                 driver={driver}
-                deleting={false}
-                onEdit={openEditModal}
+                deleting={deletingId === driver.id}
+                onEdit={() => openEditModal(driver)}
                 onDelete={() => deleteDriver(driver)}
               />
             ))
@@ -633,7 +666,7 @@ function DriverFormModal({
                 {editing ? 'Cập nhật tài xế' : 'Thêm tài xế'}
               </Text>
               <Text style={styles.modalSubtitle}>
-                Nhập thông tin hồ sơ và giấy phép
+                Nhập thông tin tài xế trên Odoo
               </Text>
             </View>
             <Pressable style={styles.modalCloseButton} onPress={onClose}>
@@ -660,11 +693,10 @@ function DriverFormModal({
               keyboardType="phone-pad"
             />
             <FormInput
-              label="CCCD/CMND"
+              label="Mã nội bộ"
               value={form.id_number}
               onChangeText={value => onChange('id_number', value)}
-              placeholder="001234567890"
-              keyboardType="number-pad"
+              placeholder="Có thể bỏ trống"
             />
             <View style={styles.formRow}>
               <FormInput
@@ -678,7 +710,7 @@ function DriverFormModal({
                 label="Hạng bằng"
                 value={form.license_class}
                 onChangeText={value => onChange('license_class', value)}
-                placeholder="D"
+                placeholder="b1, b2, d, e, f"
                 compact
               />
             </View>
@@ -691,7 +723,7 @@ function DriverFormModal({
                 compact
               />
               <DateField
-                label="Ngày sinh"
+                label="Ngày phụ"
                 value={form.date_of_birth}
                 placeholder="Chọn ngày"
                 onPress={() => setActiveDateField('date_of_birth')}
@@ -699,10 +731,10 @@ function DriverFormModal({
               />
             </View>
             <FormInput
-              label="Địa chỉ"
+              label="Thông tin phụ"
               value={form.address}
               onChangeText={value => onChange('address', value)}
-              placeholder="Hà Nội"
+              placeholder="Có thể bỏ trống"
             />
             <Text style={styles.formLabel}>Trạng thái</Text>
             <View style={styles.statusOptions}>

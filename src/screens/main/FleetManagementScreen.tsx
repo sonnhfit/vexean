@@ -91,12 +91,12 @@ const statusMeta: Record<
 
 const emptyForm: VehicleForm = {
   license_plate: '',
-  vehicle_type: '',
+  vehicle_type: 'coach',
   brand: '',
   model: '',
-  year: '',
+  year: '1',
   seat_count: '',
-  color: '',
+  color: '2_2',
   has_ac: true,
   has_wifi: false,
   has_usb: false,
@@ -117,7 +117,7 @@ function mapOdooVehicle(vehicle: OdooVehicle): Vehicle {
     vehicle_type_name: vehicle.vehicle_type || 'Chưa cập nhật',
     brand: '',
     model: vehicle.name || '',
-    year: null,
+    year: vehicle.floor_count || null,
     seat_count: vehicle.capacity || null,
     color: vehicle.seat_layout || '',
     has_ac: false,
@@ -150,24 +150,44 @@ function toOptionalNumber(value: string) {
 }
 
 function buildVehiclePayload(form: VehicleForm) {
+  const licensePlate = form.license_plate.trim();
+  const capacity = toOptionalNumber(form.seat_count);
+  const floorCount = toOptionalNumber(form.year);
+
   return {
-    license_plate: form.license_plate.trim(),
-    vehicle_type: toOptionalNumber(form.vehicle_type),
-    brand: form.brand.trim(),
-    model: form.model.trim(),
-    year: toOptionalNumber(form.year),
-    seat_count: toOptionalNumber(form.seat_count),
-    color: form.color.trim(),
-    has_ac: form.has_ac,
-    has_wifi: form.has_wifi,
-    has_usb: form.has_usb,
-    has_tv: form.has_tv,
-    has_toilet: form.has_toilet,
-    notes: form.notes.trim(),
-    status: form.status,
-    insurance_expiry: form.insurance_expiry.trim() || null,
-    registration_expiry: form.registration_expiry.trim() || null,
-    is_active: form.is_active,
+    name: form.brand.trim() || licensePlate,
+    license_plate: licensePlate,
+    vehicle_type: form.vehicle_type.trim() || 'coach',
+    capacity: capacity || 0,
+    floor_count: floorCount || 1,
+    seat_layout: form.color.trim() || '2_2',
+    active: form.is_active,
+    note: [form.model.trim(), form.notes.trim()].filter(Boolean).join('\n'),
+  };
+}
+
+function createVehicleForm(vehicle: Vehicle): VehicleForm {
+  return {
+    license_plate: vehicle.license_plate || '',
+    vehicle_type:
+      vehicle.vehicle_type_name && vehicle.vehicle_type_name !== 'Chưa cập nhật'
+        ? vehicle.vehicle_type_name
+        : 'coach',
+    brand: vehicle.model || '',
+    model: '',
+    year: vehicle.year ? String(vehicle.year) : '1',
+    seat_count: vehicle.seat_count ? String(vehicle.seat_count) : '',
+    color: vehicle.color || '2_2',
+    has_ac: false,
+    has_wifi: false,
+    has_usb: false,
+    has_tv: false,
+    has_toilet: false,
+    notes: vehicle.notes || '',
+    status: vehicle.status || 'active',
+    insurance_expiry: '',
+    registration_expiry: '',
+    is_active: vehicle.is_active,
   };
 }
 
@@ -214,6 +234,7 @@ export function FleetManagementScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formModalVisible, setFormModalVisible] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
@@ -294,17 +315,15 @@ export function FleetManagementScreen() {
   };
 
   const openAddModal = () => {
-    Alert.alert(
-      'Dữ liệu từ Odoo',
-      'Danh sách xe đang được lấy từ Odoo. Vui lòng thêm hoặc sửa xe trên Odoo.',
-    );
+    setEditingVehicle(null);
+    setForm(emptyForm);
+    setFormModalVisible(true);
   };
 
-  const openEditModal = () => {
-    Alert.alert(
-      'Dữ liệu từ Odoo',
-      'Thông tin xe đang được đồng bộ từ Odoo. Vui lòng cập nhật trên Odoo.',
-    );
+  const openEditModal = (vehicle: Vehicle) => {
+    setEditingVehicle(vehicle);
+    setForm(createVehicleForm(vehicle));
+    setFormModalVisible(true);
   };
 
   const closeFormModal = () => {
@@ -330,10 +349,15 @@ export function FleetManagementScreen() {
       return;
     }
 
+    if (!toOptionalNumber(form.seat_count)) {
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập số ghế hợp lệ.');
+      return;
+    }
+
     setSaving(true);
     try {
       const isEditing = Boolean(editingVehicle);
-      await requestJson<Vehicle>(
+      await requestJson<OdooVehicle>(
         isEditing
           ? `${VEHICLE_ENDPOINT}${editingVehicle?.id}/`
           : VEHICLE_ENDPOINT,
@@ -341,7 +365,9 @@ export function FleetManagementScreen() {
           method: isEditing ? 'PATCH' : 'POST',
           auth: true,
           body: buildVehiclePayload(form),
-          logLabel: isEditing ? 'vehicles-update' : 'vehicles-create',
+          logLabel: isEditing
+            ? 'odoo-vehicles-update'
+            : 'odoo-vehicles-create',
         },
       );
 
@@ -361,10 +387,32 @@ export function FleetManagementScreen() {
   };
 
   const deleteVehicle = async (vehicle: Vehicle) => {
-    Alert.alert(
-      'Dữ liệu từ Odoo',
-      `Xe ${vehicle.license_plate} đang được quản lý trên Odoo. Vui lòng xoá hoặc ngưng hoạt động trên Odoo.`,
-    );
+    Alert.alert('Xoá xe', `Bạn muốn xoá mềm xe ${vehicle.license_plate}?`, [
+      { text: 'Huỷ', style: 'cancel' },
+      {
+        text: 'Xoá',
+        style: 'destructive',
+        onPress: async () => {
+          setDeletingId(vehicle.id);
+          try {
+            await requestJson<unknown>(`${VEHICLE_ENDPOINT}${vehicle.id}/`, {
+              method: 'DELETE',
+              auth: true,
+              logLabel: 'odoo-vehicles-delete',
+            });
+            await fetchVehicles(appliedSearch, 'initial');
+          } catch (deleteError) {
+            const message =
+              deleteError instanceof Error
+                ? deleteError.message
+                : 'Không thể xoá xe.';
+            Alert.alert('Xoá thất bại', message);
+          } finally {
+            setDeletingId(null);
+          }
+        },
+      },
+    ]);
   };
 
   return (
@@ -503,14 +551,9 @@ export function FleetManagementScreen() {
               <VehicleRow
                 key={vehicle.id}
                 vehicle={vehicle}
-                deleting={false}
-                onPress={() =>
-                  Alert.alert(
-                    'Dữ liệu từ Odoo',
-                    'Chi tiết xe đang được quản lý trên Odoo. Vui lòng xem hoặc cập nhật trên Odoo.',
-                  )
-                }
-                onEdit={openEditModal}
+                deleting={deletingId === vehicle.id}
+                onPress={() => openEditModal(vehicle)}
+                onEdit={() => openEditModal(vehicle)}
                 onDelete={() => deleteVehicle(vehicle)}
               />
             ))
@@ -661,7 +704,7 @@ function VehicleFormModal({
                 {editing ? 'Cập nhật xe' : 'Thêm xe mới'}
               </Text>
               <Text style={styles.modalSubtitle}>
-                Nhập thông tin xe và giấy tờ vận hành
+                Nhập thông tin xe trên Odoo
               </Text>
             </View>
             <Pressable style={styles.modalCloseButton} onPress={onClose}>
@@ -683,11 +726,10 @@ function VehicleFormModal({
             />
             <View style={styles.formRow}>
               <FormInput
-                label="ID loại xe"
+                label="Loại xe"
                 value={form.vehicle_type}
                 onChangeText={value => onChange('vehicle_type', value)}
-                placeholder="2"
-                keyboardType="number-pad"
+                placeholder="coach, bus, limousine"
                 compact
               />
               <FormInput
@@ -701,34 +743,34 @@ function VehicleFormModal({
             </View>
             <View style={styles.formRow}>
               <FormInput
-                label="Hãng"
+                label="Tên xe"
                 value={form.brand}
                 onChangeText={value => onChange('brand', value)}
-                placeholder="Hyundai"
+                placeholder="Có thể bỏ trống"
                 compact
               />
               <FormInput
-                label="Dòng xe"
+                label="Ghi chú ngắn"
                 value={form.model}
                 onChangeText={value => onChange('model', value)}
-                placeholder="Universe"
+                placeholder="Có thể bỏ trống"
                 compact
               />
             </View>
             <View style={styles.formRow}>
               <FormInput
-                label="Năm"
+                label="Số tầng"
                 value={form.year}
                 onChangeText={value => onChange('year', value)}
-                placeholder="2020"
+                placeholder="1 hoặc 2"
                 keyboardType="number-pad"
                 compact
               />
               <FormInput
-                label="Màu"
+                label="Layout ghế"
                 value={form.color}
                 onChangeText={value => onChange('color', value)}
-                placeholder="Trắng"
+                placeholder="2_2, 2_1 hoặc 1_1"
                 compact
               />
             </View>
