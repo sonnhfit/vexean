@@ -1,7 +1,16 @@
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
+import { ComponentProps } from 'react';
 import { useState } from 'react';
-import { Button, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import Ionicons from '@react-native-vector-icons/ionicons';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { bootstrapAuth, signOut } from '../../store/authSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
@@ -43,11 +52,54 @@ export function AccountScreen() {
         </View>
 
         <View style={styles.buttonGroup}>
-          <Button title="Xem hồ sơ" onPress={() => navigation.navigate('Profile')} color={APP_COLORS.primaryDark} />
+          <AccountAction
+            icon="person-circle-outline"
+            title="Xem hồ sơ"
+            text="Thông tin cá nhân và vai trò"
+            onPress={() => navigation.navigate('Profile')}
+          />
+          <AccountAction
+            icon="create-outline"
+            title="Chỉnh sửa thông tin"
+            text="Cập nhật tên, email và SĐT liên kết"
+            onPress={() => navigation.navigate('EditProfile')}
+          />
         </View>
-        <Button title="Đăng xuất" onPress={() => dispatch(signOut())} color={APP_COLORS.primaryDark} />
+        <Pressable style={styles.signOutButton} onPress={() => dispatch(signOut())}>
+          <Ionicons name="log-out-outline" size={18} color={APP_COLORS.surface} />
+          <Text style={styles.signOutText}>Đăng xuất</Text>
+        </Pressable>
       </ScrollView>
     </ScreenContainer>
+  );
+}
+
+function AccountAction({
+  icon,
+  title,
+  text,
+  onPress,
+}: {
+  icon: ComponentProps<typeof Ionicons>['name'];
+  title: string;
+  text: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={styles.actionRow} onPress={onPress}>
+      <View style={styles.actionIcon}>
+        <Ionicons name={icon} size={20} color={APP_COLORS.primaryDark} />
+      </View>
+      <View style={styles.actionTextWrap}>
+        <Text style={styles.actionTitle}>{title}</Text>
+        <Text style={styles.actionText}>{text}</Text>
+      </View>
+      <Ionicons
+        name="chevron-forward"
+        size={18}
+        color={APP_COLORS.textSecondary}
+      />
+    </Pressable>
   );
 }
 
@@ -76,5 +128,54 @@ const styles = StyleSheet.create({
   },
   buttonGroup: {
     marginBottom: 16,
+    gap: 10,
+  },
+  actionRow: {
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: APP_COLORS.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  actionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: APP_COLORS.primaryLight,
+  },
+  actionTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  actionTitle: {
+    color: APP_COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  actionText: {
+    marginTop: 2,
+    color: APP_COLORS.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+  },
+  signOutButton: {
+    minHeight: 44,
+    borderRadius: 10,
+    backgroundColor: APP_COLORS.primaryDark,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  signOutText: {
+    color: APP_COLORS.surface,
+    fontSize: 14,
+    fontWeight: '900',
   },
 });

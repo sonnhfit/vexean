@@ -2,6 +2,7 @@ export type RootStackParamList = {
   Login: undefined;
   MainTabs: undefined;
   Profile: undefined;
+  EditProfile: undefined;
   VehicleDetail: { vehicleId: number };
   TicketBooking: {
     initialPhone?: string;
@@ -12,6 +13,12 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Dashboard: undefined;
   CustomerHome: undefined;
+  CustomerTicket:
+    | {
+        initialPhone?: string;
+        refreshKey?: number;
+      }
+    | undefined;
   CustomerOrders:
     | {
         initialPhone?: string;

@@ -19,54 +19,54 @@ import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
-import { useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 import { MainTabParamList } from '../../types/navigation';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 type Props = BottomTabScreenProps<MainTabParamList, 'CustomerOrders'>;
-
-type PassengerBooking = {
-  id: number;
-  booking_code: string;
-  passenger_name: string;
-  passenger_phone: string;
-  pickup_location: string;
-  dropoff_location: string;
-  total_amount: string;
-  payment_status: string;
-  status: string;
-  created_at: string;
-};
+type OdooRelation = false | [number, string];
 
 type CargoBooking = {
   id: number;
   name?: string;
   booking_code?: string;
+  trip_id?: OdooRelation;
+  route_id?: OdooRelation;
+  departure_time?: string;
   sender_name: string;
   sender_phone: string;
+  pickup_location?: string;
   receiver_name: string;
+  receiver_phone?: string;
   delivery_location: string;
+  cargo_description?: string;
+  weight_kg?: number;
+  quantity?: number;
   shipping_fee?: string | number;
+  cod_amount?: string | number;
+  total_collect_amount?: string | number;
+  payment_method?: string;
+  payment_status?: string;
   status?: string;
   state?: string;
+  pickup_confirmed_at?: string | false;
+  delivered_at?: string | false;
   created_at?: string;
+  create_date?: string;
 };
 
-type LookupResponse = {
-  phone: string;
-  passenger_bookings: PassengerBooking[];
-  cargo_bookings: CargoBooking[];
-};
-
-type CargoBookingListResponse = {
+type CargoBookingListResponse = CargoBooking[] | {
+  phone?: string;
   results?: CargoBooking[];
 };
 
 const cargoSteps = ['Đã tạo', 'Xác nhận', 'Đã nhận', 'Đang giao', 'Hoàn tất'];
-const ticketSteps = ['Đã đặt', 'Xác nhận', 'Chờ đi', 'Hoàn tất'];
 
-function formatDateTime(value: string) {
+function formatDateTime(value: string | false | undefined) {
+  if (!value) {
+    return 'Chưa cập nhật';
+  }
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
@@ -75,8 +75,21 @@ function formatDateTime(value: string) {
   return date.toLocaleString('vi-VN');
 }
 
-function normalizeStatus(value: string) {
-  return value.toLowerCase().replace(/\s+/g, '_');
+function formatMoney(value: number | string | undefined) {
+  const amount = Number(value || 0);
+  if (Number.isNaN(amount) || amount <= 0) {
+    return 'Đang cập nhật';
+  }
+
+  return amount.toLocaleString('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    maximumFractionDigits: 0,
+  });
+}
+
+function normalizeStatus(value: string | undefined) {
+  return (value || '').toLowerCase().replace(/\s+/g, '_');
 }
 
 function getCargoStepIndex(status: string) {
@@ -99,42 +112,24 @@ function getCargoStepIndex(status: string) {
   return 0;
 }
 
-function getTicketStepIndex(status: string) {
-  const normalized = normalizeStatus(status);
-  if (normalized.includes('done') || normalized.includes('complete')) {
-    return 3;
-  }
-  if (normalized.includes('confirm') || normalized.includes('book')) {
-    return 1;
-  }
-  return 0;
+function relationName(value: OdooRelation | undefined) {
+  return Array.isArray(value) ? value[1] : '';
 }
 
 export function CustomerOrdersScreen({ route }: Props) {
-  const user = useAppSelector(state => state.auth.user);
-  const defaultPhone = route.params?.initialPhone || user?.phone_number || '';
-  const [phone, setPhone] = useState(defaultPhone);
-  const [result, setResult] = useState<LookupResponse | null>(null);
+  const [search, setSearch] = useState('');
+  const [cargoBookings, setCargoBookings] = useState<CargoBooking[]>([]);
+  const [accountPhone, setAccountPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const totalOrders = useMemo(() => {
-    if (!result) {
-      return 0;
-    }
-
-    return result.passenger_bookings.length + result.cargo_bookings.length;
-  }, [result]);
+    return cargoBookings.length;
+  }, [cargoBookings.length]);
 
   const lookupOrders = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
-      const lookupPhone = phone.trim();
-      if (!lookupPhone) {
-        setError('Vui lòng nhập số điện thoại để tra cứu.');
-        return;
-      }
-
       if (mode === 'initial') {
         setLoading(true);
       } else {
@@ -144,62 +139,49 @@ export function CustomerOrdersScreen({ route }: Props) {
 
       try {
         const cargoParams = new URLSearchParams({
-          search: lookupPhone,
           limit: '100',
         });
-        const [lookupData, cargoData] = await Promise.all([
-          requestJson<LookupResponse>(
-            `/api/nhaxe/lookup/?phone=${encodeURIComponent(lookupPhone)}`,
-            {
-              method: 'GET',
-              auth: true,
-              logLabel: 'customer-orders-lookup',
-            },
-          ),
-          requestJson<CargoBookingListResponse>(
-            `/api/nhaxe/odoo/cargo-bookings/?${cargoParams.toString()}`,
-            {
-              method: 'GET',
-              auth: true,
-              logLabel: 'odoo-cargo-orders',
-            },
-          ),
-        ]);
-        setResult({
-          phone: lookupPhone,
-          passenger_bookings: lookupData.passenger_bookings || [],
-          cargo_bookings: cargoData.results || [],
-        });
+        const searchTerm = search.trim();
+        if (searchTerm) {
+          cargoParams.set('search', searchTerm);
+        }
+        const cargoData = await requestJson<CargoBookingListResponse>(
+          `/api/nhaxe/odoo/my-cargo-bookings/?${cargoParams.toString()}`,
+          {
+            method: 'GET',
+            auth: true,
+            logLabel: 'odoo-my-cargo-orders',
+          },
+        );
+
+        setCargoBookings(
+          Array.isArray(cargoData) ? cargoData : cargoData.results || [],
+        );
+        setAccountPhone(Array.isArray(cargoData) ? '' : cargoData.phone || '');
       } catch (lookupError) {
         const message =
           lookupError instanceof Error
             ? lookupError.message
-            : 'Không tra cứu được đơn hàng.';
+            : 'Không tra cứu được đơn gửi hàng.';
         setError(message);
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [phone],
+    [search],
   );
 
   useEffect(() => {
-    if (route.params?.initialPhone) {
-      setPhone(route.params.initialPhone);
-    }
-  }, [route.params?.initialPhone, route.params?.refreshKey]);
-
-  useEffect(() => {
-    if (phone.trim()) {
-      lookupOrders('initial');
-    }
-  }, [lookupOrders, phone, route.params?.refreshKey]);
+    lookupOrders('initial');
+    // Search text should only submit when the user presses search.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.refreshKey]);
 
   return (
     <ScreenContainer
       title="Theo dõi đơn"
-      subtitle="Tra cứu vé xe và đơn gửi hàng"
+      subtitle="Theo dõi đơn gửi hàng của tài khoản đang đăng nhập"
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -221,12 +203,11 @@ export function CustomerOrdersScreen({ route }: Props) {
               color={APP_COLORS.textSecondary}
             />
             <TextInput
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="Số điện thoại đặt đơn"
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Tìm mã đơn, địa chỉ, mô tả hàng"
               placeholderTextColor={APP_COLORS.placeholder}
               style={styles.searchInput}
-              keyboardType="phone-pad"
               returnKeyType="search"
               onSubmitEditing={() => lookupOrders('initial')}
             />
@@ -256,17 +237,18 @@ export function CustomerOrdersScreen({ route }: Props) {
           </View>
         ) : null}
 
-        {result ? (
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>{totalOrders}</Text>
-            <View style={styles.summaryTextWrap}>
-              <Text style={styles.summaryTitle}>Đơn hàng của bạn</Text>
-              <Text style={styles.summaryText}>SĐT: {result.phone}</Text>
-            </View>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryValue}>{totalOrders}</Text>
+          <View style={styles.summaryTextWrap}>
+            <Text style={styles.summaryTitle}>Đơn gửi hàng của bạn</Text>
+            <Text style={styles.summaryText}>
+              Lấy theo tài khoản đang đăng nhập
+              {accountPhone ? ` - SĐT: ${accountPhone}` : ''}
+            </Text>
           </View>
-        ) : null}
+        </View>
 
-        {!loading && result && totalOrders === 0 ? (
+        {!loading && !error && totalOrders === 0 ? (
           <View style={styles.feedbackCard}>
             <Ionicons
               name="receipt-outline"
@@ -275,12 +257,12 @@ export function CustomerOrdersScreen({ route }: Props) {
             />
             <Text style={styles.feedbackTitle}>Chưa có đơn hàng</Text>
             <Text style={styles.feedbackText}>
-              Khi bạn đặt vé hoặc gửi đồ, trạng thái sẽ hiển thị tại đây.
+              Khi bạn gửi đồ, trạng thái vận chuyển sẽ hiển thị tại đây.
             </Text>
           </View>
         ) : null}
 
-        {result?.cargo_bookings.map(item => (
+        {cargoBookings.map(item => (
           <TrackingCard
             key={`cargo-${item.id}`}
             icon="cube-outline"
@@ -290,31 +272,18 @@ export function CustomerOrdersScreen({ route }: Props) {
             steps={cargoSteps}
             activeStep={getCargoStepIndex(item.state || item.status || 'draft')}
             lines={[
+              `Tuyến: ${relationName(item.route_id) || relationName(item.trip_id) || 'Chưa cập nhật'}`,
+              `Người gửi: ${item.sender_name} (${item.sender_phone})`,
               `Người nhận: ${item.receiver_name}`,
               `Nơi giao: ${item.delivery_location}`,
-              `Cước phí: ${item.shipping_fee || 'Đang cập nhật'}`,
-              ...(item.created_at
-                ? [`Tạo lúc: ${formatDateTime(item.created_at)}`]
+              ...(item.pickup_location ? [`Nơi nhận: ${item.pickup_location}`] : []),
+              ...(item.cargo_description ? [`Hàng: ${item.cargo_description}`] : []),
+              `Cước phí: ${formatMoney(item.shipping_fee)}`,
+              `Thanh toán: ${item.payment_status || 'Chưa cập nhật'}`,
+              ...(item.departure_time
+                ? [`Giờ xe: ${formatDateTime(item.departure_time)}`]
                 : []),
-            ]}
-          />
-        ))}
-
-        {result?.passenger_bookings.map(item => (
-          <TrackingCard
-            key={`ticket-${item.id}`}
-            icon="ticket-outline"
-            title={item.booking_code}
-            badge="Vé xe"
-            status={item.status}
-            steps={ticketSteps}
-            activeStep={getTicketStepIndex(item.status)}
-            lines={[
-              `Khách: ${item.passenger_name}`,
-              `Điểm đón: ${item.pickup_location}`,
-              `Điểm trả: ${item.dropoff_location}`,
-              `Thanh toán: ${item.total_amount} (${item.payment_status})`,
-              `Tạo lúc: ${formatDateTime(item.created_at)}`,
+              `Tạo lúc: ${formatDateTime(item.created_at || item.create_date)}`,
             ]}
           />
         ))}

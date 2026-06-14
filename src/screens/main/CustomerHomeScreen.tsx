@@ -1,8 +1,9 @@
-import { ComponentProps, useEffect, useState } from 'react';
+import { ComponentProps, useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,9 +16,11 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
-import { useAppSelector } from '../../store/hooks';
+import { bootstrapAuth } from '../../store/authSlice';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 import { MainTabParamList, RootStackParamList } from '../../types/navigation';
+import { getLinkedPhoneNumber } from '../../utils/userPhone';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 type CustomerHomeNavigation = CompositeNavigationProp<
@@ -46,8 +49,9 @@ type MapAddressSuggestion = {
 
 export function CustomerHomeScreen() {
   const navigation = useNavigation<CustomerHomeNavigation>();
+  const dispatch = useAppDispatch();
   const user = useAppSelector(state => state.auth.user);
-  const defaultPhone = user?.phone_number || '';
+  const defaultPhone = getLinkedPhoneNumber(user);
   const displayName =
     user?.full_name || user?.first_name || user?.username || 'Quý khách';
 
@@ -63,6 +67,7 @@ export function CustomerHomeScreen() {
   const [addressError, setAddressError] = useState<string | null>(null);
   const [addressFocused, setAddressFocused] = useState(false);
   const [cargoSubmitting, setCargoSubmitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const query = cargoRoute.trim();
@@ -144,7 +149,7 @@ export function CustomerHomeScreen() {
     setCargoSubmitting(true);
 
     try {
-      const data = await requestJson<OdooCargoBookingResponse>(
+      await requestJson<OdooCargoBookingResponse>(
         '/api/nhaxe/odoo/cargo-bookings/',
         {
           method: 'POST',
@@ -164,10 +169,6 @@ export function CustomerHomeScreen() {
         },
       );
 
-      Alert.alert(
-        'Gửi đồ thành công',
-        `Mã đơn: ${data.name || `#${data.id}`}`,
-      );
       setCargoReceiverName('');
       setCargoReceiverPhone('');
       setCargoRoute('');
@@ -194,6 +195,18 @@ export function CustomerHomeScreen() {
     setAddressFocused(false);
   };
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await dispatch(bootstrapAuth()).unwrap();
+      setCargoSenderPhone(current => current || defaultPhone);
+      setAddressSuggestions([]);
+      setAddressError(null);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [defaultPhone, dispatch]);
+
   return (
     <ScreenContainer
       title="Trang chủ"
@@ -203,7 +216,28 @@ export function CustomerHomeScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={APP_COLORS.primaryDark}
+          />
+        }
       >
+        {!defaultPhone ? (
+          <View style={styles.phoneNotice}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={18}
+              color={APP_COLORS.danger}
+            />
+            <Text style={styles.phoneNoticeText}>
+              Tài khoản chưa có SĐT liên kết. Vui lòng cập nhật SĐT để xem vé
+              và đơn gửi hàng của bạn.
+            </Text>
+          </View>
+        ) : null}
+
         <View style={styles.heroCard}>
           <View style={styles.heroIcon}>
             <Ionicons
@@ -252,6 +286,16 @@ export function CustomerHomeScreen() {
             onPress={() => {
               setCargoSenderPhone(current => current || defaultPhone);
             }}
+          />
+          <QuickAction
+            icon="ticket-outline"
+            title="Vé của tôi"
+            text="Xem vé đã đặt"
+            onPress={() =>
+              navigation.navigate('CustomerTicket', {
+                initialPhone: cargoSenderPhone.trim() || defaultPhone,
+              })
+            }
           />
         </View>
 
@@ -438,6 +482,23 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     gap: 12,
   },
+  phoneNotice: {
+    borderWidth: 1,
+    borderColor: APP_COLORS.danger,
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: APP_COLORS.dangerLight,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  phoneNoticeText: {
+    flex: 1,
+    color: APP_COLORS.textPrimary,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
   heroCard: {
     borderWidth: 1,
     borderColor: APP_COLORS.border,
@@ -481,10 +542,13 @@ const styles = StyleSheet.create({
   },
   actionGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   quickAction: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '31%',
+    minWidth: 104,
     borderWidth: 1,
     borderColor: APP_COLORS.border,
     borderRadius: 12,

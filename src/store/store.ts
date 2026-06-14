@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { configureStore, createListenerMiddleware } from '@reduxjs/toolkit';
-import authReducer, { signIn, signOut } from './authSlice';
+import authReducer, { signIn, signOut, updateProfile } from './authSlice';
 
 const AUTH_STORAGE_KEY = 'vexean.auth';
 
@@ -31,6 +31,32 @@ authListenerMiddleware.startListening({
       await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
     } catch {
       // Ignore storage errors during logout.
+    }
+  },
+});
+
+authListenerMiddleware.startListening({
+  actionCreator: updateProfile.fulfilled,
+  effect: async (action, listenerApi) => {
+    try {
+      const state = listenerApi.getState() as RootState;
+      if (!state.auth.accessToken || !state.auth.refreshToken) {
+        return;
+      }
+
+      await AsyncStorage.setItem(
+        AUTH_STORAGE_KEY,
+        JSON.stringify({
+          accessToken: state.auth.accessToken,
+          refreshToken: state.auth.refreshToken,
+          user: {
+            ...state.auth.user,
+            ...action.payload,
+          },
+        }),
+      );
+    } catch {
+      // Ignore storage errors so profile update still works.
     }
   },
 });

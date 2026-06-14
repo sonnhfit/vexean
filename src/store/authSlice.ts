@@ -5,6 +5,10 @@ import { requestJson } from '../services/apiClient';
 const AUTH_STORAGE_KEY = 'vexean.auth';
 
 type UserPermissions = Record<string, boolean>;
+type UserPhoneProfile = {
+  phone?: string;
+  phone_number?: string;
+};
 
 export type AuthUser = {
   id: number;
@@ -19,12 +23,21 @@ export type AuthUser = {
   permissions?: UserPermissions;
   is_staff?: boolean;
   is_active?: boolean;
+  user_role?: UserPhoneProfile;
+  employee?: UserPhoneProfile;
 };
 
 type LoginPayload = {
   access: string;
   refresh: string;
   user: AuthUser;
+};
+
+export type UpdateProfileInput = {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone_number?: string;
 };
 
 type SignInInput = {
@@ -56,31 +69,6 @@ const initialState: AuthState = {
   hydrated: false,
 };
 
-function extractErrorMessage(errorData: unknown): string | undefined {
-  if (!errorData || typeof errorData !== 'object') {
-    return undefined;
-  }
-
-  const asRecord = errorData as Record<string, unknown>;
-  const detail = asRecord.detail;
-  const message = asRecord.message;
-
-  if (typeof detail === 'string') {
-    return detail;
-  }
-
-  if (Array.isArray(detail)) {
-    const first = detail[0];
-    return typeof first === 'string' ? first : undefined;
-  }
-
-  if (typeof message === 'string') {
-    return message;
-  }
-
-  return undefined;
-}
-
 function isAuthUser(user: unknown): user is AuthUser {
   if (!user || typeof user !== 'object') {
     return false;
@@ -88,6 +76,42 @@ function isAuthUser(user: unknown): user is AuthUser {
 
   const asRecord = user as Record<string, unknown>;
   return typeof asRecord.id === 'number' && typeof asRecord.username === 'string';
+}
+
+function normalizeProfileUser(response: unknown): AuthUser | null {
+  if (!response || typeof response !== 'object') {
+    return null;
+  }
+
+  const data = response as Record<string, unknown>;
+  const id = typeof data.id === 'number' ? data.id : data.user_id;
+  const username = data.username;
+
+  if (typeof id !== 'number' || typeof username !== 'string') {
+    return null;
+  }
+
+  return {
+    id,
+    username,
+    full_name: typeof data.full_name === 'string' ? data.full_name : undefined,
+    email: typeof data.email === 'string' ? data.email : undefined,
+    first_name:
+      typeof data.first_name === 'string' ? data.first_name : undefined,
+    last_name: typeof data.last_name === 'string' ? data.last_name : undefined,
+    phone_number:
+      typeof data.phone_number === 'string' ? data.phone_number : undefined,
+    role: typeof data.role === 'string' ? data.role : undefined,
+    role_display:
+      typeof data.role_display === 'string' ? data.role_display : undefined,
+    permissions:
+      data.permissions && typeof data.permissions === 'object'
+        ? (data.permissions as UserPermissions)
+        : undefined,
+    is_staff: typeof data.is_staff === 'boolean' ? data.is_staff : undefined,
+    is_active:
+      typeof data.is_active === 'boolean' ? data.is_active : undefined,
+  };
 }
 
 function isPersistedAuthState(value: unknown): value is PersistedAuthState {
@@ -159,6 +183,33 @@ export const signIn = createAsyncThunk<LoginPayload, SignInInput, { rejectValue:
   },
 );
 
+export const updateProfile = createAsyncThunk<
+  AuthUser,
+  UpdateProfileInput,
+  { rejectValue: string }
+>('auth/updateProfile', async (payload, { rejectWithValue }) => {
+  try {
+    const response = await requestJson<unknown>('/api/users/profile/', {
+      method: 'PATCH',
+      auth: true,
+      body: payload,
+      logLabel: 'updateProfile',
+    });
+    const user = normalizeProfileUser(response);
+    if (!user) {
+      return rejectWithValue('Dữ liệu hồ sơ không hợp lệ từ máy chủ.');
+    }
+
+    return user;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ApiError') {
+      return rejectWithValue(error.message);
+    }
+
+    return rejectWithValue('Không cập nhật được hồ sơ. Vui lòng thử lại.');
+  }
+});
+
 const authSlice = createSlice({
   name: 'auth',
   initialState,
@@ -204,6 +255,22 @@ const authSlice = createSlice({
         state.refreshToken = null;
         state.user = null;
         state.hydrated = true;
+      })
+      .addCase(updateProfile.pending, state => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(updateProfile.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        state.user = {
+          ...state.user,
+          ...action.payload,
+        };
+        state.hydrated = true;
+      })
+      .addCase(updateProfile.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload || 'Cập nhật hồ sơ thất bại.';
       });
   },
 });
