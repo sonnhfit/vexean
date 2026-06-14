@@ -7,6 +7,7 @@ import { AdminScreen } from '../screens/main/AdminScreen';
 import { CallCenterScreen } from '../screens/main/CallCenterScreen';
 import { CargoScreen } from '../screens/main/CargoScreen';
 import { CustomerHomeScreen } from '../screens/main/CustomerHomeScreen';
+import { CustomerOrdersScreen } from '../screens/main/CustomerOrdersScreen';
 import { DashboardScreen } from '../screens/main/DashboardScreen';
 import { DriverManagementScreen } from '../screens/main/DriverManagementScreen';
 import { FleetManagementScreen } from '../screens/main/FleetManagementScreen';
@@ -27,6 +28,7 @@ function createTabBarIcon(activeIcon: IconName, inactiveIcon: IconName): BottomT
 
 const dashboardIcon = createTabBarIcon('grid', 'grid-outline');
 const customerHomeIcon = createTabBarIcon('home', 'home-outline');
+const customerOrdersIcon = createTabBarIcon('receipt', 'receipt-outline');
 const passengersIcon = createTabBarIcon('people', 'people-outline');
 const fleetIcon = createTabBarIcon('bus', 'bus-outline');
 const cargoIcon = createTabBarIcon('cube', 'cube-outline');
@@ -67,6 +69,11 @@ export function MainTabs() {
           name="CustomerHome"
           component={CustomerHomeScreen}
           options={{ title: 'Trang chủ', tabBarIcon: customerHomeIcon }}
+        />
+        <Tab.Screen
+          name="CustomerOrders"
+          component={CustomerOrdersScreen}
+          options={{ title: 'Theo dõi', tabBarIcon: customerOrdersIcon }}
         />
         <Tab.Screen
           name="Account"

@@ -12,6 +12,12 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Dashboard: undefined;
   CustomerHome: undefined;
+  CustomerOrders:
+    | {
+        initialPhone?: string;
+        refreshKey?: number;
+      }
+    | undefined;
   Passengers: undefined;
   FleetManagement: undefined;
   Cargo: undefined;
