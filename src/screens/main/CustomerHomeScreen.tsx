@@ -1,4 +1,4 @@
-import { ComponentProps, useMemo, useState } from 'react';
+import { ComponentProps, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -53,6 +53,13 @@ type LookupResponse = {
   cargo_bookings: CargoBooking[];
 };
 
+type MapAddressSuggestion = {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+};
+
 function formatDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -74,6 +81,12 @@ export function CustomerHomeScreen() {
   const [cargoReceiverPhone, setCargoReceiverPhone] = useState('');
   const [cargoRoute, setCargoRoute] = useState('');
   const [cargoNote, setCargoNote] = useState('');
+  const [addressSuggestions, setAddressSuggestions] = useState<
+    MapAddressSuggestion[]
+  >([]);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [addressError, setAddressError] = useState<string | null>(null);
+  const [addressFocused, setAddressFocused] = useState(false);
   const [lookupResult, setLookupResult] = useState<LookupResponse | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -89,6 +102,67 @@ export function CustomerHomeScreen() {
       lookupResult.cargo_bookings.length
     );
   }, [lookupResult]);
+
+  useEffect(() => {
+    const query = cargoRoute.trim();
+    if (!addressFocused || query.length < 3) {
+      setAddressSuggestions([]);
+      setAddressLoading(false);
+      setAddressError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setAddressLoading(true);
+      setAddressError(null);
+
+      try {
+        const params = new URLSearchParams({
+          format: 'json',
+          addressdetails: '1',
+          limit: '5',
+          countrycodes: 'vn',
+          q: query,
+        });
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+          {
+            method: 'GET',
+            headers: {
+              Accept: 'application/json',
+              'Accept-Language': 'vi',
+            },
+            signal: controller.signal,
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error('Không lấy được gợi ý bản đồ.');
+        }
+
+        const data = (await response.json()) as MapAddressSuggestion[];
+        setAddressSuggestions(Array.isArray(data) ? data : []);
+      } catch (suggestionError) {
+        if (
+          suggestionError instanceof Error &&
+          suggestionError.name === 'AbortError'
+        ) {
+          return;
+        }
+
+        setAddressSuggestions([]);
+        setAddressError('Không tải được gợi ý địa chỉ.');
+      } finally {
+        setAddressLoading(false);
+      }
+    }, 450);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [addressFocused, cargoRoute]);
 
   const lookupOrders = async (mode: 'initial' | 'refresh' = 'initial') => {
     const phone = lookupPhone.trim();
@@ -139,6 +213,13 @@ export function CustomerHomeScreen() {
     setCargoReceiverPhone('');
     setCargoRoute('');
     setCargoNote('');
+  };
+
+  const selectAddressSuggestion = (suggestion: MapAddressSuggestion) => {
+    setCargoRoute(suggestion.display_name);
+    setAddressSuggestions([]);
+    setAddressError(null);
+    setAddressFocused(false);
   };
 
   return (
@@ -239,11 +320,51 @@ export function CustomerHomeScreen() {
             <Text style={styles.label}>Tuyến / nơi giao</Text>
             <TextInput
               value={cargoRoute}
-              onChangeText={setCargoRoute}
+              onChangeText={value => {
+                setCargoRoute(value);
+                setAddressFocused(true);
+              }}
               placeholder="Ví dụ: Hà Nội - Quảng Ninh"
               placeholderTextColor={APP_COLORS.textSecondary}
               style={styles.input}
+              onFocus={() => setAddressFocused(true)}
             />
+            {addressFocused && cargoRoute.trim().length >= 3 ? (
+              <View style={styles.suggestionBox}>
+                {addressLoading ? (
+                  <View style={styles.suggestionStatus}>
+                    <ActivityIndicator
+                      color={APP_COLORS.primaryDark}
+                      size="small"
+                    />
+                    <Text style={styles.suggestionStatusText}>
+                      Đang tìm địa chỉ...
+                    </Text>
+                  </View>
+                ) : null}
+                {!addressLoading && addressError ? (
+                  <Text style={styles.suggestionError}>{addressError}</Text>
+                ) : null}
+                {!addressLoading && !addressError
+                  ? addressSuggestions.map(suggestion => (
+                      <Pressable
+                        key={suggestion.place_id}
+                        style={styles.suggestionItem}
+                        onPress={() => selectAddressSuggestion(suggestion)}
+                      >
+                        <Ionicons
+                          name="location-outline"
+                          size={16}
+                          color={APP_COLORS.primaryDark}
+                        />
+                        <Text style={styles.suggestionText} numberOfLines={2}>
+                          {suggestion.display_name}
+                        </Text>
+                      </Pressable>
+                    ))
+                  : null}
+              </View>
+            ) : null}
           </View>
           <View style={styles.formGroup}>
             <Text style={styles.label}>Ghi chú hàng</Text>
@@ -521,6 +642,50 @@ const styles = StyleSheet.create({
     backgroundColor: APP_COLORS.background,
     color: APP_COLORS.textPrimary,
     fontSize: 14,
+  },
+  suggestionBox: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 10,
+    backgroundColor: APP_COLORS.surface,
+    overflow: 'hidden',
+  },
+  suggestionStatus: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+  },
+  suggestionStatusText: {
+    color: APP_COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  suggestionError: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    color: APP_COLORS.danger,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  suggestionItem: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderTopWidth: 1,
+    borderTopColor: APP_COLORS.border,
+  },
+  suggestionText: {
+    flex: 1,
+    color: APP_COLORS.textPrimary,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   noteInput: {
     minHeight: 68,
