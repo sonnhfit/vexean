@@ -13,11 +13,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
@@ -505,7 +505,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
               value={travelDate}
               onChangeText={changeTravelDate}
               placeholder="YYYY-MM-DD"
-              placeholderTextColor={APP_COLORS.textSecondary}
+              placeholderTextColor={APP_COLORS.placeholder}
               style={styles.dateInput}
             />
             <Pressable style={styles.smallButton} onPress={() => fetchTrips()}>
@@ -626,7 +626,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
               value={passengerName}
               onChangeText={setPassengerName}
               placeholder={getAutoPassengerName(passengerPhone)}
-              placeholderTextColor={APP_COLORS.textSecondary}
+              placeholderTextColor={APP_COLORS.placeholder}
               style={styles.input}
             />
           </View>
@@ -637,7 +637,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
                 value={passengerPhone}
                 onChangeText={setPassengerPhone}
                 placeholder="0909000000"
-                placeholderTextColor={APP_COLORS.textSecondary}
+                placeholderTextColor={APP_COLORS.placeholder}
                 style={styles.input}
                 keyboardType="phone-pad"
               />
@@ -648,7 +648,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
                 value={passengerIdNumber}
                 onChangeText={setPassengerIdNumber}
                 placeholder="Bỏ trống"
-                placeholderTextColor={APP_COLORS.textSecondary}
+                placeholderTextColor={APP_COLORS.placeholder}
                 style={styles.input}
                 keyboardType="number-pad"
               />
@@ -660,7 +660,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
               value={note}
               onChangeText={setNote}
               placeholder="Khach goi tong dai"
-              placeholderTextColor={APP_COLORS.textSecondary}
+              placeholderTextColor={APP_COLORS.placeholder}
               style={[styles.input, styles.noteInput]}
               multiline
             />

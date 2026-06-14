@@ -6,12 +6,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
+import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
@@ -446,7 +446,7 @@ export function CallCenterScreen() {
               value={phone}
               onChangeText={setPhone}
               placeholder="Nhập số điện thoại"
-              placeholderTextColor={APP_COLORS.textSecondary}
+              placeholderTextColor={APP_COLORS.placeholder}
               style={styles.input}
               keyboardType="phone-pad"
             />
@@ -504,7 +504,7 @@ export function CallCenterScreen() {
                     value={appointmentName}
                     onChangeText={setAppointmentName}
                     placeholder="Nhập tên khách"
-                    placeholderTextColor={APP_COLORS.textSecondary}
+                    placeholderTextColor={APP_COLORS.placeholder}
                     style={styles.input}
                   />
                 </View>
@@ -515,7 +515,7 @@ export function CallCenterScreen() {
                     value={appointmentTitle}
                     onChangeText={setAppointmentTitle}
                     placeholder="Ví dụ: Tư vấn tuyến xe"
-                    placeholderTextColor={APP_COLORS.textSecondary}
+                    placeholderTextColor={APP_COLORS.placeholder}
                     style={styles.input}
                   />
                 </View>
@@ -527,7 +527,7 @@ export function CallCenterScreen() {
                       value={appointmentDate}
                       onChangeText={setAppointmentDate}
                       placeholder="2026-06-11"
-                      placeholderTextColor={APP_COLORS.textSecondary}
+                      placeholderTextColor={APP_COLORS.placeholder}
                       style={styles.input}
                     />
                   </View>
@@ -537,7 +537,7 @@ export function CallCenterScreen() {
                       value={appointmentTime}
                       onChangeText={setAppointmentTime}
                       placeholder="10:00"
-                      placeholderTextColor={APP_COLORS.textSecondary}
+                      placeholderTextColor={APP_COLORS.placeholder}
                       style={styles.input}
                     />
                   </View>
@@ -549,7 +549,7 @@ export function CallCenterScreen() {
                     value={appointmentNote}
                     onChangeText={setAppointmentNote}
                     placeholder="Ghi chú thêm nếu có"
-                    placeholderTextColor={APP_COLORS.textSecondary}
+                    placeholderTextColor={APP_COLORS.placeholder}
                     style={[styles.input, styles.noteInput]}
                     multiline
                   />
@@ -577,7 +577,7 @@ export function CallCenterScreen() {
                     value={pickupName}
                     onChangeText={setPickupName}
                     placeholder="Nhập tên khách hoặc đơn vị"
-                    placeholderTextColor={APP_COLORS.textSecondary}
+                    placeholderTextColor={APP_COLORS.placeholder}
                     style={styles.input}
                   />
                 </View>
@@ -588,7 +588,7 @@ export function CallCenterScreen() {
                     value={pickupTitle}
                     onChangeText={setPickupTitle}
                     placeholder="Ví dụ: Lấy hàng COD quận 1"
-                    placeholderTextColor={APP_COLORS.textSecondary}
+                    placeholderTextColor={APP_COLORS.placeholder}
                     style={styles.input}
                   />
                 </View>
@@ -600,7 +600,7 @@ export function CallCenterScreen() {
                       value={pickupDate}
                       onChangeText={setPickupDate}
                       placeholder="2026-06-11"
-                      placeholderTextColor={APP_COLORS.textSecondary}
+                      placeholderTextColor={APP_COLORS.placeholder}
                       style={styles.input}
                     />
                   </View>
@@ -610,7 +610,7 @@ export function CallCenterScreen() {
                       value={pickupTime}
                       onChangeText={setPickupTime}
                       placeholder="15:00"
-                      placeholderTextColor={APP_COLORS.textSecondary}
+                      placeholderTextColor={APP_COLORS.placeholder}
                       style={styles.input}
                     />
                   </View>
@@ -622,7 +622,7 @@ export function CallCenterScreen() {
                     value={pickupNote}
                     onChangeText={setPickupNote}
                     placeholder="Thông tin kiện hàng, cân nặng..."
-                    placeholderTextColor={APP_COLORS.textSecondary}
+                    placeholderTextColor={APP_COLORS.placeholder}
                     style={[styles.input, styles.noteInput]}
                     multiline
                   />

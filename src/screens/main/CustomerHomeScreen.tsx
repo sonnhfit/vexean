@@ -7,12 +7,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
 import { useAppSelector } from '../../store/hooks';
@@ -47,6 +47,18 @@ type CargoBooking = {
   created_at: string;
 };
 
+type OdooCargoBookingResponse = {
+  id: number;
+  name: string;
+  sender_name: string;
+  sender_phone: string;
+  receiver_name: string;
+  receiver_phone: string;
+  delivery_location: string;
+  cargo_description: string;
+  state: string;
+};
+
 type LookupResponse = {
   phone: string;
   passenger_bookings: PassengerBooking[];
@@ -78,6 +90,7 @@ export function CustomerHomeScreen() {
 
   const [lookupPhone, setLookupPhone] = useState(defaultPhone);
   const [cargoSenderPhone, setCargoSenderPhone] = useState(defaultPhone);
+  const [cargoReceiverName, setCargoReceiverName] = useState('');
   const [cargoReceiverPhone, setCargoReceiverPhone] = useState('');
   const [cargoRoute, setCargoRoute] = useState('');
   const [cargoNote, setCargoNote] = useState('');
@@ -89,6 +102,7 @@ export function CustomerHomeScreen() {
   const [addressFocused, setAddressFocused] = useState(false);
   const [lookupResult, setLookupResult] = useState<LookupResponse | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
+  const [cargoSubmitting, setCargoSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -200,19 +214,65 @@ export function CustomerHomeScreen() {
     }
   };
 
-  const submitCargoRequest = () => {
+  const submitCargoRequest = async () => {
     if (!cargoSenderPhone.trim() || !cargoReceiverPhone.trim()) {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập SĐT gửi và nhận.');
       return;
     }
 
-    Alert.alert(
-      'Đã ghi nhận yêu cầu',
-      'Nhà xe sẽ liên hệ lại để xác nhận thông tin gửi đồ.',
-    );
-    setCargoReceiverPhone('');
-    setCargoRoute('');
-    setCargoNote('');
+    if (!cargoReceiverName.trim()) {
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên người nhận.');
+      return;
+    }
+
+    if (!cargoNote.trim()) {
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập mô tả hàng hoá.');
+      return;
+    }
+
+    setCargoSubmitting(true);
+
+    try {
+      const data = await requestJson<OdooCargoBookingResponse>(
+        '/api/nhaxe/odoo/cargo-bookings/',
+        {
+          method: 'POST',
+          auth: true,
+          logLabel: 'odoo-cargo-create',
+          body: {
+            sender_name: displayName,
+            sender_phone: cargoSenderPhone.trim(),
+            receiver_name: cargoReceiverName.trim(),
+            receiver_phone: cargoReceiverPhone.trim(),
+            delivery_location: cargoRoute.trim(),
+            cargo_description: cargoNote.trim(),
+            create_partners: true,
+            payment_method: 'cash',
+            payment_status: 'pending',
+          },
+        },
+      );
+
+      Alert.alert(
+        'Gửi đồ thành công',
+        `Mã đơn: ${data.name || `#${data.id}`}`,
+      );
+      setCargoReceiverName('');
+      setCargoReceiverPhone('');
+      setCargoRoute('');
+      setCargoNote('');
+      if (lookupPhone.trim() || cargoSenderPhone.trim()) {
+        setLookupPhone(current => current || cargoSenderPhone.trim());
+      }
+    } catch (cargoError) {
+      const message =
+        cargoError instanceof Error
+          ? cargoError.message
+          : 'Không tạo được đơn gửi hàng.';
+      Alert.alert('Gửi đồ thất bại', message);
+    } finally {
+      setCargoSubmitting(false);
+    }
   };
 
   const selectAddressSuggestion = (suggestion: MapAddressSuggestion) => {
@@ -299,7 +359,7 @@ export function CustomerHomeScreen() {
                 value={cargoSenderPhone}
                 onChangeText={setCargoSenderPhone}
                 placeholder="0909000000"
-                placeholderTextColor={APP_COLORS.textSecondary}
+                placeholderTextColor={APP_COLORS.placeholder}
                 style={styles.input}
                 keyboardType="phone-pad"
               />
@@ -310,11 +370,21 @@ export function CustomerHomeScreen() {
                 value={cargoReceiverPhone}
                 onChangeText={setCargoReceiverPhone}
                 placeholder="0912000000"
-                placeholderTextColor={APP_COLORS.textSecondary}
+                placeholderTextColor={APP_COLORS.placeholder}
                 style={styles.input}
                 keyboardType="phone-pad"
               />
             </View>
+          </View>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Tên người nhận</Text>
+            <TextInput
+              value={cargoReceiverName}
+              onChangeText={setCargoReceiverName}
+              placeholder="Nguyễn Văn A"
+              placeholderTextColor={APP_COLORS.placeholder}
+              style={styles.input}
+            />
           </View>
           <View style={styles.formGroup}>
             <Text style={styles.label}>Tuyến / nơi giao</Text>
@@ -325,7 +395,7 @@ export function CustomerHomeScreen() {
                 setAddressFocused(true);
               }}
               placeholder="Ví dụ: Hà Nội - Quảng Ninh"
-              placeholderTextColor={APP_COLORS.textSecondary}
+              placeholderTextColor={APP_COLORS.placeholder}
               style={styles.input}
               onFocus={() => setAddressFocused(true)}
             />
@@ -372,14 +442,31 @@ export function CustomerHomeScreen() {
               value={cargoNote}
               onChangeText={setCargoNote}
               placeholder="Tên hàng, số kiện, cân nặng"
-              placeholderTextColor={APP_COLORS.textSecondary}
+              placeholderTextColor={APP_COLORS.placeholder}
               style={[styles.input, styles.noteInput]}
               multiline
             />
           </View>
-          <Pressable style={styles.primaryButton} onPress={submitCargoRequest}>
-            <Ionicons name="send-outline" size={16} color={APP_COLORS.surface} />
-            <Text style={styles.primaryButtonText}>Gửi yêu cầu</Text>
+          <Pressable
+            style={[
+              styles.primaryButton,
+              cargoSubmitting && styles.disabledButton,
+            ]}
+            onPress={submitCargoRequest}
+            disabled={cargoSubmitting}
+          >
+            {cargoSubmitting ? (
+              <ActivityIndicator color={APP_COLORS.surface} size="small" />
+            ) : (
+              <Ionicons
+                name="send-outline"
+                size={16}
+                color={APP_COLORS.surface}
+              />
+            )}
+            <Text style={styles.primaryButtonText}>
+              {cargoSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu'}
+            </Text>
           </Pressable>
         </View>
 
@@ -390,7 +477,7 @@ export function CustomerHomeScreen() {
               value={lookupPhone}
               onChangeText={setLookupPhone}
               placeholder="Số điện thoại đặt vé / gửi đồ"
-              placeholderTextColor={APP_COLORS.textSecondary}
+              placeholderTextColor={APP_COLORS.placeholder}
               style={styles.lookupInput}
               keyboardType="phone-pad"
               returnKeyType="search"
@@ -699,6 +786,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+  },
+  disabledButton: {
+    opacity: 0.65,
   },
   primaryButtonText: {
     color: APP_COLORS.surface,

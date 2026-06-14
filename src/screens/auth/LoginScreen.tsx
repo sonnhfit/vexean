@@ -7,10 +7,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
+import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { signIn } from '../../store/authSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
@@ -84,7 +84,7 @@ export function LoginScreen() {
                 autoComplete="username"
                 textContentType="username"
                 placeholder="Nhập tên đăng nhập"
-                placeholderTextColor={APP_COLORS.textSecondary}
+                placeholderTextColor={APP_COLORS.placeholder}
               />
             </View>
           </View>
@@ -101,7 +101,7 @@ export function LoginScreen() {
                 autoComplete="password"
                 textContentType="password"
                 placeholder="Nhập mật khẩu"
-                placeholderTextColor={APP_COLORS.textSecondary}
+                placeholderTextColor={APP_COLORS.placeholder}
               />
               <Pressable
                 onPress={() => setShowPassword(value => !value)}

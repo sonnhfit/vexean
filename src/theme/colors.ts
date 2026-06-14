@@ -14,5 +14,6 @@ export const APP_COLORS = {
   surface: '#ffffff',
   textPrimary: '#000000',
   textSecondary: '#1f2933',
+  placeholder: '#8a9a9a',
   border: '#b8e5e3',
 };

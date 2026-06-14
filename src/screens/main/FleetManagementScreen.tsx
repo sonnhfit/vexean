@@ -14,10 +14,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
+import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
@@ -443,7 +443,7 @@ export function FleetManagementScreen() {
               value={searchText}
               onChangeText={setSearchText}
               placeholder="Tìm biển số hoặc tên xe"
-              placeholderTextColor={APP_COLORS.textSecondary}
+              placeholderTextColor={APP_COLORS.placeholder}
               style={styles.searchInput}
               returnKeyType="search"
               onSubmitEditing={searchVehicles}
@@ -952,7 +952,7 @@ function FormInput({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={APP_COLORS.textSecondary}
+        placeholderTextColor={APP_COLORS.placeholder}
         keyboardType={keyboardType}
         multiline={multiline}
         autoCapitalize={autoCapitalize}
