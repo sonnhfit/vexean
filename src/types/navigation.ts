@@ -25,6 +25,8 @@ export type MainTabParamList = {
         refreshKey?: number;
       }
     | undefined;
+  CustomerFavorites: undefined;
+  CustomerNotifications: undefined;
   Passengers: undefined;
   FleetManagement: undefined;
   Cargo: undefined;

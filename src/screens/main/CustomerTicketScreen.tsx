@@ -22,7 +22,7 @@ import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
 import { MainTabParamList } from '../../types/navigation';
 
-type Props = BottomTabScreenProps<MainTabParamList, 'CustomerTicket'>;
+type Props = BottomTabScreenProps<MainTabParamList, 'CustomerOrders'>;
 type IconName = ComponentProps<typeof Ionicons>['name'];
 type OdooRelation = false | [number, string];
 
@@ -267,10 +267,7 @@ export function CustomerTicketScreen({ route }: Props) {
   }, [route.params?.refreshKey]);
 
   return (
-    <ScreenContainer
-      title="Vé của tôi"
-      subtitle="Danh sách vé lấy trực tiếp từ Odoo"
-    >
+    <ScreenContainer title="Đơn hàng">
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"

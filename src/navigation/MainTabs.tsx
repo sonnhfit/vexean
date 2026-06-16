@@ -6,8 +6,9 @@ import { useAppSelector } from '../store/hooks';
 import { AdminScreen } from '../screens/main/AdminScreen';
 import { CallCenterScreen } from '../screens/main/CallCenterScreen';
 import { CargoScreen } from '../screens/main/CargoScreen';
+import { CustomerFavoritesScreen } from '../screens/main/CustomerFavoritesScreen';
 import { CustomerHomeScreen } from '../screens/main/CustomerHomeScreen';
-import { CustomerOrdersScreen } from '../screens/main/CustomerOrdersScreen';
+import { CustomerNotificationsScreen } from '../screens/main/CustomerNotificationsScreen';
 import { CustomerTicketScreen } from '../screens/main/CustomerTicketScreen';
 import { DashboardScreen } from '../screens/main/DashboardScreen';
 import { DriverManagementScreen } from '../screens/main/DriverManagementScreen';
@@ -28,9 +29,10 @@ function createTabBarIcon(activeIcon: IconName, inactiveIcon: IconName): BottomT
 }
 
 const dashboardIcon = createTabBarIcon('grid', 'grid-outline');
-const customerHomeIcon = createTabBarIcon('home', 'home-outline');
-const customerTicketIcon = createTabBarIcon('ticket', 'ticket-outline');
+const customerHomeIcon = createTabBarIcon('search', 'search-outline');
 const customerOrdersIcon = createTabBarIcon('receipt', 'receipt-outline');
+const customerFavoritesIcon = createTabBarIcon('heart', 'heart-outline');
+const customerNotificationsIcon = createTabBarIcon('notifications', 'notifications-outline');
 const passengersIcon = createTabBarIcon('people', 'people-outline');
 const fleetIcon = createTabBarIcon('bus', 'bus-outline');
 const cargoIcon = createTabBarIcon('cube', 'cube-outline');
@@ -56,31 +58,41 @@ export function MainTabs() {
     return (
       <Tab.Navigator
         screenOptions={{
-          headerTitleAlign: 'center',
-          headerStyle: { backgroundColor: APP_COLORS.primary },
-          headerTintColor: APP_COLORS.surface,
-          tabBarActiveTintColor: APP_COLORS.primary,
+          headerShown: false,
+          tabBarActiveTintColor: APP_COLORS.primaryDark,
           tabBarInactiveTintColor: APP_COLORS.textSecondary,
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: '500',
+          },
           tabBarStyle: {
             borderTopColor: APP_COLORS.border,
             backgroundColor: APP_COLORS.surface,
+            minHeight: 62,
+            paddingTop: 5,
+            paddingBottom: 6,
           },
         }}
       >
         <Tab.Screen
           name="CustomerHome"
           component={CustomerHomeScreen}
-          options={{ title: 'Trang chủ', tabBarIcon: customerHomeIcon }}
-        />
-        <Tab.Screen
-          name="CustomerTicket"
-          component={CustomerTicketScreen}
-          options={{ title: 'Vé của tôi', tabBarIcon: customerTicketIcon }}
+          options={{ title: 'Tìm kiếm', tabBarIcon: customerHomeIcon }}
         />
         <Tab.Screen
           name="CustomerOrders"
-          component={CustomerOrdersScreen}
-          options={{ title: 'Theo dõi', tabBarIcon: customerOrdersIcon }}
+          component={CustomerTicketScreen}
+          options={{ title: 'Đơn hàng', tabBarIcon: customerOrdersIcon }}
+        />
+        <Tab.Screen
+          name="CustomerFavorites"
+          component={CustomerFavoritesScreen}
+          options={{ title: 'Yêu thích', tabBarIcon: customerFavoritesIcon }}
+        />
+        <Tab.Screen
+          name="CustomerNotifications"
+          component={CustomerNotificationsScreen}
+          options={{ title: 'Thông báo', tabBarIcon: customerNotificationsIcon }}
         />
         <Tab.Screen
           name="Account"

@@ -1,9 +1,6 @@
-import { ComponentProps, useCallback, useEffect, useState } from 'react';
+import { ComponentProps, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,11 +10,8 @@ import Ionicons from '@react-native-vector-icons/ionicons';
 import { CompositeNavigationProp, useNavigation } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { AppTextInput as TextInput } from '../../components/AppTextInput';
-import { ScreenContainer } from '../../components/ScreenContainer';
-import { requestJson } from '../../services/apiClient';
-import { bootstrapAuth } from '../../store/authSlice';
-import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 import { MainTabParamList, RootStackParamList } from '../../types/navigation';
 import { getLinkedPhoneNumber } from '../../utils/userPhone';
@@ -28,685 +22,545 @@ type CustomerHomeNavigation = CompositeNavigationProp<
   NativeStackNavigationProp<RootStackParamList>
 >;
 
-type OdooCargoBookingResponse = {
-  id: number;
-  name: string;
-  sender_name: string;
-  sender_phone: string;
-  receiver_name: string;
-  receiver_phone: string;
-  delivery_location: string;
-  cargo_description: string;
-  state: string;
-};
+const recentSearches = [
+  { from: 'Hồ Chí Minh', to: 'Bà Rịa-Vũng Tàu', date: 'T6, 19/09/2025' },
+  { from: 'Hồ Chí Minh', to: 'Bà Rịa-Vũng Tàu', date: 'T7, 20/09/2025' },
+];
 
-type MapAddressSuggestion = {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-};
+const popularRoutes = [
+  { title: 'Sapa', color: '#5c9f92' },
+  { title: 'Hạ Long', color: '#4d8ea1' },
+  { title: 'Đà Lạt', color: '#7b8f76' },
+];
 
 export function CustomerHomeScreen() {
   const navigation = useNavigation<CustomerHomeNavigation>();
-  const dispatch = useAppDispatch();
   const user = useAppSelector(state => state.auth.user);
   const defaultPhone = getLinkedPhoneNumber(user);
   const displayName =
     user?.full_name || user?.first_name || user?.username || 'Quý khách';
-
-  const [cargoSenderPhone, setCargoSenderPhone] = useState(defaultPhone);
-  const [cargoReceiverName, setCargoReceiverName] = useState('');
-  const [cargoReceiverPhone, setCargoReceiverPhone] = useState('');
-  const [cargoRoute, setCargoRoute] = useState('');
-  const [cargoNote, setCargoNote] = useState('');
-  const [addressSuggestions, setAddressSuggestions] = useState<
-    MapAddressSuggestion[]
-  >([]);
-  const [addressLoading, setAddressLoading] = useState(false);
-  const [addressError, setAddressError] = useState<string | null>(null);
-  const [addressFocused, setAddressFocused] = useState(false);
-  const [cargoSubmitting, setCargoSubmitting] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-
-  useEffect(() => {
-    const query = cargoRoute.trim();
-    if (!addressFocused || query.length < 3) {
-      setAddressSuggestions([]);
-      setAddressLoading(false);
-      setAddressError(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      setAddressLoading(true);
-      setAddressError(null);
-
-      try {
-        const params = new URLSearchParams({
-          format: 'json',
-          addressdetails: '1',
-          limit: '5',
-          countrycodes: 'vn',
-          q: query,
-        });
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?${params.toString()}`,
-          {
-            method: 'GET',
-            headers: {
-              Accept: 'application/json',
-              'Accept-Language': 'vi',
-            },
-            signal: controller.signal,
-          },
-        );
-
-        if (!response.ok) {
-          throw new Error('Không lấy được gợi ý bản đồ.');
-        }
-
-        const data = (await response.json()) as MapAddressSuggestion[];
-        setAddressSuggestions(Array.isArray(data) ? data : []);
-      } catch (suggestionError) {
-        if (
-          suggestionError instanceof Error &&
-          suggestionError.name === 'AbortError'
-        ) {
-          return;
-        }
-
-        setAddressSuggestions([]);
-        setAddressError('Không tải được gợi ý địa chỉ.');
-      } finally {
-        setAddressLoading(false);
-      }
-    }, 450);
-
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [addressFocused, cargoRoute]);
-
-  const submitCargoRequest = async () => {
-    if (!cargoSenderPhone.trim() || !cargoReceiverPhone.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập SĐT gửi và nhận.');
-      return;
-    }
-
-    if (!cargoReceiverName.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên người nhận.');
-      return;
-    }
-
-    if (!cargoNote.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập mô tả hàng hoá.');
-      return;
-    }
-
-    setCargoSubmitting(true);
-
-    try {
-      await requestJson<OdooCargoBookingResponse>(
-        '/api/nhaxe/odoo/cargo-bookings/',
-        {
-          method: 'POST',
-          auth: true,
-          logLabel: 'odoo-cargo-create',
-          body: {
-            sender_name: displayName,
-            sender_phone: cargoSenderPhone.trim(),
-            receiver_name: cargoReceiverName.trim(),
-            receiver_phone: cargoReceiverPhone.trim(),
-            delivery_location: cargoRoute.trim(),
-            cargo_description: cargoNote.trim(),
-            create_partners: true,
-            payment_method: 'cash',
-            payment_status: 'pending',
-          },
-        },
-      );
-
-      setCargoReceiverName('');
-      setCargoReceiverPhone('');
-      setCargoRoute('');
-      setCargoNote('');
-      navigation.navigate('CustomerOrders', {
-        initialPhone: cargoSenderPhone.trim(),
-        refreshKey: Date.now(),
-      });
-    } catch (cargoError) {
-      const message =
-        cargoError instanceof Error
-          ? cargoError.message
-          : 'Không tạo được đơn gửi hàng.';
-      Alert.alert('Gửi đồ thất bại', message);
-    } finally {
-      setCargoSubmitting(false);
-    }
-  };
-
-  const selectAddressSuggestion = (suggestion: MapAddressSuggestion) => {
-    setCargoRoute(suggestion.display_name);
-    setAddressSuggestions([]);
-    setAddressError(null);
-    setAddressFocused(false);
-  };
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await dispatch(bootstrapAuth()).unwrap();
-      setCargoSenderPhone(current => current || defaultPhone);
-      setAddressSuggestions([]);
-      setAddressError(null);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [defaultPhone, dispatch]);
+  const [roundTrip, setRoundTrip] = useState(false);
 
   return (
-    <ScreenContainer
-      title="Trang chủ"
-      subtitle={`Xin chào, ${displayName}`}
-    >
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.contentContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={APP_COLORS.primaryDark}
-          />
-        }
       >
-        {!defaultPhone ? (
-          <View style={styles.phoneNotice}>
-            <Ionicons
-              name="alert-circle-outline"
-              size={18}
-              color={APP_COLORS.danger}
-            />
-            <Text style={styles.phoneNoticeText}>
-              Tài khoản chưa có SĐT liên kết. Vui lòng cập nhật SĐT để xem vé
-              và đơn gửi hàng của bạn.
-            </Text>
-          </View>
-        ) : null}
-
-        <View style={styles.heroCard}>
-          <View style={styles.heroIcon}>
-            <Ionicons
-              name="ticket-outline"
-              size={28}
-              color={APP_COLORS.primaryDark}
-            />
-          </View>
-          <View style={styles.heroText}>
-            <Text style={styles.heroTitle}>Đặt vé xe</Text>
-            <Text style={styles.heroMeta}>Chọn chuyến, chọn ghế, xác nhận vé</Text>
-          </View>
-          <Pressable
-            style={styles.heroButton}
-            onPress={() =>
-              navigation.navigate('TicketBooking', {
-                initialPhone: cargoSenderPhone.trim() || defaultPhone,
-                initialPassengerName: displayName,
-              })
-            }
-          >
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={APP_COLORS.surface}
-            />
-          </Pressable>
-        </View>
-
-        <View style={styles.actionGrid}>
-          <QuickAction
-            icon="bus-outline"
-            title="Mua vé"
-            text="Chọn chỗ nhanh"
-            onPress={() =>
-              navigation.navigate('TicketBooking', {
-                initialPhone: cargoSenderPhone.trim() || defaultPhone,
-                initialPassengerName: displayName,
-              })
-            }
-          />
-          <QuickAction
-            icon="cube-outline"
-            title="Gửi đồ"
-            text="Tạo yêu cầu"
-            onPress={() => {
-              setCargoSenderPhone(current => current || defaultPhone);
-            }}
-          />
-          <QuickAction
-            icon="ticket-outline"
-            title="Vé của tôi"
-            text="Xem vé đã đặt"
-            onPress={() =>
-              navigation.navigate('CustomerTicket', {
-                initialPhone: cargoSenderPhone.trim() || defaultPhone,
-              })
-            }
-          />
-        </View>
-
-        <View style={styles.sectionCard}>
-          <SectionTitle icon="cube-outline" title="Gửi đồ" />
-          <View style={styles.rowInputs}>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>SĐT người gửi</Text>
-              <TextInput
-                value={cargoSenderPhone}
-                onChangeText={setCargoSenderPhone}
-                placeholder="0909000000"
-                placeholderTextColor={APP_COLORS.placeholder}
-                style={styles.input}
-                keyboardType="phone-pad"
-              />
-            </View>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>SĐT người nhận</Text>
-              <TextInput
-                value={cargoReceiverPhone}
-                onChangeText={setCargoReceiverPhone}
-                placeholder="0912000000"
-                placeholderTextColor={APP_COLORS.placeholder}
-                style={styles.input}
-                keyboardType="phone-pad"
-              />
-            </View>
-          </View>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Tên người nhận</Text>
-            <TextInput
-              value={cargoReceiverName}
-              onChangeText={setCargoReceiverName}
-              placeholder="Nguyễn Văn A"
-              placeholderTextColor={APP_COLORS.placeholder}
-              style={styles.input}
-            />
-          </View>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Tuyến / nơi giao</Text>
-            <TextInput
-              value={cargoRoute}
-              onChangeText={value => {
-                setCargoRoute(value);
-                setAddressFocused(true);
-              }}
-              placeholder="Ví dụ: Hà Nội - Quảng Ninh"
-              placeholderTextColor={APP_COLORS.placeholder}
-              style={styles.input}
-              onFocus={() => setAddressFocused(true)}
-            />
-            {addressFocused && cargoRoute.trim().length >= 3 ? (
-              <View style={styles.suggestionBox}>
-                {addressLoading ? (
-                  <View style={styles.suggestionStatus}>
-                    <ActivityIndicator
-                      color={APP_COLORS.primaryDark}
-                      size="small"
-                    />
-                    <Text style={styles.suggestionStatusText}>
-                      Đang tìm địa chỉ...
-                    </Text>
-                  </View>
-                ) : null}
-                {!addressLoading && addressError ? (
-                  <Text style={styles.suggestionError}>{addressError}</Text>
-                ) : null}
-                {!addressLoading && !addressError
-                  ? addressSuggestions.map(suggestion => (
-                      <Pressable
-                        key={suggestion.place_id}
-                        style={styles.suggestionItem}
-                        onPress={() => selectAddressSuggestion(suggestion)}
-                      >
-                        <Ionicons
-                          name="location-outline"
-                          size={16}
-                          color={APP_COLORS.primaryDark}
-                        />
-                        <Text style={styles.suggestionText} numberOfLines={2}>
-                          {suggestion.display_name}
-                        </Text>
-                      </Pressable>
-                    ))
-                  : null}
+        <View style={styles.hero}>
+          <View style={styles.heroTop}>
+            <View style={styles.logoRow}>
+              <View style={styles.logoIcon}>
+                <Ionicons name="leaf-outline" size={22} color="#f1d58a" />
               </View>
-            ) : null}
+              <Text style={styles.logoText}>An Nhiên</Text>
+            </View>
+            <Pressable>
+              <Text style={styles.loginLink}>Đăng nhập</Text>
+            </Pressable>
           </View>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Ghi chú hàng</Text>
-            <TextInput
-              value={cargoNote}
-              onChangeText={setCargoNote}
-              placeholder="Tên hàng, số kiện, cân nặng"
-              placeholderTextColor={APP_COLORS.placeholder}
-              style={[styles.input, styles.noteInput]}
-              multiline
-            />
+          <Text style={styles.promise}>
+            Chọn chuyến đi an tâm, nhẹ nhàng và thuận tiện cho từng hành trình
+          </Text>
+        </View>
+
+        <View style={styles.searchCard}>
+          <View style={styles.transportTabs}>
+            <TransportTab icon="bus" label="Xe khách" active />
+            <TransportTab icon="sparkles-outline" label="Limousine" />
+            <TransportTab icon="ticket-outline" label="Ghế ngồi" />
+            <TransportTab icon="bed-outline" label="Giường nằm" />
           </View>
-          <Pressable
-            style={[
-              styles.primaryButton,
-              cargoSubmitting && styles.disabledButton,
-            ]}
-            onPress={submitCargoRequest}
-            disabled={cargoSubmitting}
-          >
-            {cargoSubmitting ? (
-              <ActivityIndicator color={APP_COLORS.surface} size="small" />
-            ) : (
-              <Ionicons
-                name="send-outline"
-                size={16}
-                color={APP_COLORS.surface}
-              />
-            )}
-            <Text style={styles.primaryButtonText}>
-              {cargoSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu'}
-            </Text>
-          </Pressable>
+
+          <View style={styles.routeBlock}>
+            <View style={styles.routeDots}>
+              <View style={styles.dotBlue} />
+              <View style={styles.dotLine} />
+              <View style={styles.dotRed} />
+            </View>
+            <View style={styles.routeFields}>
+              <RouteField label="Nơi xuất phát" value="Hồ Chí Minh" />
+              <View style={styles.divider} />
+              <RouteField label="Bạn muốn đi đâu?" value="Bà Rịa-Vũng Tàu" />
+            </View>
+            <Pressable style={styles.swapButton}>
+              <Ionicons name="swap-vertical" size={22} color="#555555" />
+            </Pressable>
+          </View>
+
+          <View style={styles.dateRow}>
+            <View style={styles.dateField}>
+              <Ionicons name="calendar-outline" size={22} color={APP_COLORS.primaryDark} />
+              <Text style={styles.dateLabel}>Ngày đi</Text>
+            </View>
+            <View style={styles.roundTripWrap}>
+              <Text style={styles.roundTripText}>Khứ hồi</Text>
+              <Pressable
+                style={[styles.switch, roundTrip && styles.switchActive]}
+                onPress={() => setRoundTrip(value => !value)}
+              >
+                <View style={[styles.switchKnob, roundTrip && styles.switchKnobActive]} />
+              </Pressable>
+            </View>
+          </View>
         </View>
 
         <Pressable
-          style={styles.trackButton}
+          style={styles.searchButton}
           onPress={() =>
-            navigation.navigate('CustomerOrders', {
-              initialPhone: cargoSenderPhone.trim() || defaultPhone,
+            navigation.navigate('TicketBooking', {
+              initialPhone: defaultPhone,
+              initialPassengerName: displayName,
             })
           }
         >
-          <Ionicons
-            name="receipt-outline"
-            size={18}
-            color={APP_COLORS.primaryDark}
-          />
-          <Text style={styles.trackButtonText}>Theo dõi đơn hàng của tôi</Text>
-          <Ionicons
-            name="chevron-forward"
-            size={18}
-            color={APP_COLORS.primaryDark}
-          />
+          <Text style={styles.searchButtonText}>Tìm kiếm</Text>
         </Pressable>
+
+        <View style={styles.benefitRow}>
+          <Benefit icon="shield-checkmark" text="Chắc chắn có chỗ" />
+          <Benefit icon="headset" text="Hỗ trợ 24/7" />
+          <Benefit icon="pricetag" text="Nhiều ưu đãi" />
+          <Benefit icon="cash" text="Thanh toán đa dạng" />
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Tìm kiếm gần đây</Text>
+          <Pressable>
+            <Text style={styles.clearText}>Xóa tất cả</Text>
+          </Pressable>
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.recentList}
+        >
+          {recentSearches.map(item => (
+            <View key={item.date} style={styles.recentCard}>
+              <View style={styles.recentRoute}>
+                <View style={styles.smallDots}>
+                  <View style={styles.smallDotBlue} />
+                  <View style={styles.smallDotRed} />
+                </View>
+                <View style={styles.recentTextWrap}>
+                  <Text style={styles.recentCity}>{item.from}</Text>
+                  <Text style={styles.recentCity}>{item.to}</Text>
+                  <Text style={styles.recentDate}>{item.date}</Text>
+                </View>
+              </View>
+              <Ionicons name="arrow-forward" size={22} color="#111111" />
+            </View>
+          ))}
+        </ScrollView>
+
+        <Text style={styles.sectionTitle}>Tuyến đường phổ biến</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.popularList}
+        >
+          {popularRoutes.map(route => (
+            <View
+              key={route.title}
+              style={[styles.popularCard, { backgroundColor: route.color }]}
+            >
+              <Text style={styles.popularText}>{route.title}</Text>
+            </View>
+          ))}
+        </ScrollView>
       </ScrollView>
-    </ScreenContainer>
+    </SafeAreaView>
   );
 }
 
-function SectionTitle({ icon, title }: { icon: IconName; title: string }) {
+function TransportTab({
+  icon,
+  label,
+  active = false,
+  badge,
+}: {
+  icon: IconName;
+  label: string;
+  active?: boolean;
+  badge?: string;
+}) {
   return (
-    <View style={styles.sectionHeader}>
-      <View style={styles.sectionIconWrap}>
-        <Ionicons name={icon} size={16} color={APP_COLORS.primaryDark} />
-      </View>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <View style={styles.transportTab}>
+      {badge ? (
+        <View style={styles.transportBadge}>
+          <Text style={styles.transportBadgeText}>{badge}</Text>
+        </View>
+      ) : null}
+      <Ionicons
+        name={icon}
+        size={24}
+        color={active ? APP_COLORS.primaryDark : '#5f6f6d'}
+      />
+      <Text style={[styles.transportText, active && styles.transportTextActive]}>
+        {label}
+      </Text>
+      {active ? <View style={styles.transportIndicator} /> : null}
     </View>
   );
 }
 
-function QuickAction({
-  icon,
-  title,
-  text,
-  onPress,
-}: {
-  icon: IconName;
-  title: string;
-  text: string;
-  onPress: () => void;
-}) {
+function RouteField({ label, value }: { label: string; value: string }) {
   return (
-    <Pressable style={styles.quickAction} onPress={onPress}>
-      <View style={styles.quickIcon}>
-        <Ionicons name={icon} size={19} color={APP_COLORS.primaryDark} />
-      </View>
-      <Text style={styles.quickTitle}>{title}</Text>
-      <Text style={styles.quickText}>{text}</Text>
-    </Pressable>
+    <View style={styles.routeField}>
+      <Text style={styles.routeLabel}>{label}</Text>
+      <Text style={styles.routeValue}>{value}</Text>
+    </View>
+  );
+}
+
+function Benefit({ icon, text }: { icon: IconName; text: string }) {
+  return (
+    <View style={styles.benefitItem}>
+      <Ionicons name={icon} size={18} color="#2fac6a" />
+      <Text style={styles.benefitText}>{text}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  contentContainer: {
-    paddingBottom: 24,
-    gap: 12,
-  },
-  phoneNotice: {
-    borderWidth: 1,
-    borderColor: APP_COLORS.danger,
-    borderRadius: 12,
-    padding: 12,
-    backgroundColor: APP_COLORS.dangerLight,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  phoneNoticeText: {
+  safeArea: {
     flex: 1,
-    color: APP_COLORS.textPrimary,
-    fontSize: 12,
-    lineHeight: 18,
-    fontWeight: '700',
-  },
-  heroCard: {
-    borderWidth: 1,
-    borderColor: APP_COLORS.border,
-    borderRadius: 12,
-    padding: 14,
-    backgroundColor: APP_COLORS.surface,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  heroIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: APP_COLORS.primaryLight,
-  },
-  heroText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  heroTitle: {
-    color: APP_COLORS.textPrimary,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  heroMeta: {
-    marginTop: 3,
-    color: APP_COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  heroButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: APP_COLORS.primaryDark,
   },
-  actionGrid: {
+  contentContainer: {
+    paddingBottom: 28,
+    backgroundColor: '#f6f7f5',
+  },
+  hero: {
+    paddingHorizontal: 18,
+    paddingTop: 24,
+    paddingBottom: 104,
+    backgroundColor: APP_COLORS.primaryDark,
+  },
+  heroTop: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
   },
-  quickAction: {
-    flexGrow: 1,
-    flexBasis: '31%',
-    minWidth: 104,
-    borderWidth: 1,
-    borderColor: APP_COLORS.border,
-    borderRadius: 12,
-    padding: 12,
-    backgroundColor: APP_COLORS.primaryLight,
-  },
-  quickIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+  logoIcon: {
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: APP_COLORS.surface,
-    marginBottom: 8,
   },
-  quickTitle: {
-    color: APP_COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  quickText: {
-    marginTop: 2,
-    color: APP_COLORS.textSecondary,
-    fontSize: 12,
+  logoText: {
+    color: APP_COLORS.surface,
+    fontSize: 24,
     fontWeight: '600',
   },
-  sectionCard: {
-    borderWidth: 1,
-    borderColor: APP_COLORS.border,
-    borderRadius: 12,
-    padding: 14,
-    backgroundColor: APP_COLORS.surface,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  sectionIconWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: APP_COLORS.primaryLight,
-  },
-  sectionTitle: {
-    color: APP_COLORS.textPrimary,
+  loginLink: {
+    color: APP_COLORS.surface,
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
-  rowInputs: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
+  promise: {
+    marginTop: 22,
+    color: '#eef8f6',
+    fontSize: 15,
+    lineHeight: 23,
+    fontWeight: '400',
   },
-  halfInput: {
-    flex: 1,
-  },
-  formGroup: {
-    marginBottom: 10,
-  },
-  label: {
-    marginBottom: 6,
-    color: APP_COLORS.textPrimary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: APP_COLORS.border,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    backgroundColor: APP_COLORS.background,
-    color: APP_COLORS.textPrimary,
-    fontSize: 14,
-  },
-  suggestionBox: {
-    marginTop: 6,
-    borderWidth: 1,
-    borderColor: APP_COLORS.border,
+  searchCard: {
+    marginHorizontal: 18,
+    marginTop: -86,
     borderRadius: 10,
     backgroundColor: APP_COLORS.surface,
+    shadowColor: '#000000',
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
     overflow: 'hidden',
   },
-  suggestionStatus: {
-    minHeight: 42,
+  transportTabs: {
+    height: 76,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: '#d9d9d9',
   },
-  suggestionStatusText: {
-    color: APP_COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  suggestionError: {
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    color: APP_COLORS.danger,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  suggestionItem: {
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    borderTopWidth: 1,
-    borderTopColor: APP_COLORS.border,
-  },
-  suggestionText: {
+  transportTab: {
     flex: 1,
-    color: APP_COLORS.textPrimary,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '600',
-  },
-  noteInput: {
-    minHeight: 68,
-    textAlignVertical: 'top',
-  },
-  primaryButton: {
-    minHeight: 44,
-    borderRadius: 10,
-    backgroundColor: APP_COLORS.primaryDark,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
-  disabledButton: {
-    opacity: 0.65,
+  transportText: {
+    color: '#222222',
+    fontSize: 12,
+    fontWeight: '600',
   },
-  primaryButtonText: {
+  transportTextActive: {
+    color: APP_COLORS.primaryDark,
+    fontWeight: '600',
+  },
+  transportIndicator: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: -2,
+    height: 3,
+    backgroundColor: APP_COLORS.primaryDark,
+  },
+  transportBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    backgroundColor: '#d9a94f',
+  },
+  transportBadgeText: {
     color: APP_COLORS.surface,
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '700',
   },
-  trackButton: {
-    borderWidth: 1,
-    borderColor: APP_COLORS.border,
-    borderRadius: 12,
-    padding: 13,
-    backgroundColor: APP_COLORS.primaryLight,
+  routeBlock: {
+    minHeight: 142,
     flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  routeDots: {
+    width: 28,
+    alignItems: 'center',
+  },
+  dotBlue: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: APP_COLORS.primaryDark,
+    borderWidth: 6,
+    borderColor: '#d7e7ff',
+  },
+  dotLine: {
+    width: 3,
+    height: 42,
+    borderStyle: 'dashed',
+    borderLeftWidth: 3,
+    borderLeftColor: '#dedede',
+  },
+  dotRed: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#d9a94f',
+    borderWidth: 6,
+    borderColor: '#f5ead2',
+  },
+  routeFields: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 16,
+  },
+  routeField: {
+    minHeight: 56,
+    justifyContent: 'center',
+  },
+  routeLabel: {
+    color: '#9b9b9b',
+    fontSize: 14,
+  },
+  routeValue: {
+    marginTop: 4,
+    color: '#111111',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#e2e2e2',
+  },
+  swapButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#efefef',
+  },
+  dateRow: {
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#e5e5e5',
+    paddingHorizontal: 22,
+  },
+  dateField: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 18,
+  },
+  dateLabel: {
+    color: '#a0a0a0',
+    fontSize: 15,
+  },
+  roundTripWrap: {
     alignItems: 'center',
     gap: 8,
   },
-  trackButtonText: {
-    flex: 1,
-    color: APP_COLORS.textPrimary,
+  roundTripText: {
+    color: '#111111',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '500',
+  },
+  switch: {
+    width: 50,
+    height: 28,
+    borderRadius: 14,
+    padding: 3,
+    backgroundColor: '#d8d8d8',
+  },
+  switchActive: {
+    backgroundColor: APP_COLORS.primaryDark,
+  },
+  switchKnob: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: APP_COLORS.surface,
+    shadowColor: '#000000',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  switchKnobActive: {
+    marginLeft: 22,
+  },
+  searchButton: {
+    minHeight: 52,
+    borderRadius: 8,
+    marginHorizontal: 18,
+    marginTop: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1d58a',
+  },
+  searchButtonText: {
+    color: '#111111',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  benefitRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+  },
+  benefitItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  benefitText: {
+    flex: 1,
+    color: '#222222',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    marginTop: 10,
+  },
+  sectionTitle: {
+    color: '#000000',
+    fontSize: 22,
+    fontWeight: '700',
+    paddingHorizontal: 18,
+  },
+  clearText: {
+    color: APP_COLORS.primaryDark,
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  recentList: {
+    gap: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  recentCard: {
+    width: 210,
+    minHeight: 90,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#d9d9d9',
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: APP_COLORS.surface,
+  },
+  recentRoute: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  smallDots: {
+    alignItems: 'center',
+    gap: 9,
+    paddingTop: 4,
+  },
+  smallDotBlue: {
+    width: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: APP_COLORS.primaryDark,
+  },
+  smallDotRed: {
+    width: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: '#d9a94f',
+  },
+  recentTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  recentCity: {
+    color: '#111111',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 5,
+  },
+  recentDate: {
+    color: '#333333',
+    fontSize: 13,
+  },
+  popularList: {
+    gap: 14,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+  },
+  popularCard: {
+    width: 164,
+    height: 96,
+    borderRadius: 10,
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  popularText: {
+    color: APP_COLORS.surface,
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
