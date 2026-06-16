@@ -68,11 +68,15 @@ export function AccountScreen() {
               </View>
               <View style={styles.memberTextWrap}>
                 <Text style={styles.memberTitle}>Thành viên An Nhiên</Text>
-                <Text style={styles.memberText}>Đăng nhập để tận hưởng quyền lợi riêng</Text>
+                <Text style={styles.memberText}>Quản lý quyền lợi và thông tin cá nhân</Text>
               </View>
-              <Pressable>
-                <Text style={styles.customerLoginLink}>Đăng nhập</Text>
-              </Pressable>
+              <View style={styles.headerProfileIcon}>
+                <Ionicons
+                  name="person-circle-outline"
+                  size={30}
+                  color={APP_COLORS.surface}
+                />
+              </View>
             </View>
           </View>
 
@@ -288,11 +292,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
-  customerLoginLink: {
-    color: APP_COLORS.surface,
-    fontSize: 14,
-    fontWeight: '700',
-    textDecorationLine: 'underline',
+  headerProfileIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   customerMenu: {
     paddingHorizontal: 18,

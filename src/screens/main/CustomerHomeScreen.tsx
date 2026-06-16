@@ -55,9 +55,24 @@ export function CustomerHomeScreen() {
               </View>
               <Text style={styles.logoText}>An Nhiên</Text>
             </View>
-            <Pressable>
-              <Text style={styles.loginLink}>Đăng nhập</Text>
-            </Pressable>
+            {user ? (
+              <Pressable
+                style={styles.profileButton}
+                onPress={() => navigation.navigate('Account')}
+                accessibilityRole="button"
+                accessibilityLabel="Mở tài khoản"
+              >
+                <Ionicons
+                  name="person-circle-outline"
+                  size={30}
+                  color={APP_COLORS.surface}
+                />
+              </Pressable>
+            ) : (
+              <Pressable>
+                <Text style={styles.loginLink}>Đăng nhập</Text>
+              </Pressable>
+            )}
           </View>
           <Text style={styles.promise}>
             Chọn chuyến đi an tâm, nhẹ nhàng và thuận tiện cho từng hành trình
@@ -263,6 +278,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  profileButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   promise: {
     marginTop: 22,
