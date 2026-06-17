@@ -1,6 +1,5 @@
 import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,11 +12,11 @@ import { CompositeNavigationProp, useNavigation } from '@react-navigation/native
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useToast } from '../../components/Toast';
 import { requestJson } from '../../services/apiClient';
 import { useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 import { MainTabParamList, RootStackParamList } from '../../types/navigation';
-import { getLinkedPhoneNumber } from '../../utils/userPhone';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 type CustomerHomeNavigation = CompositeNavigationProp<
@@ -155,10 +154,8 @@ function formatTravelDate(value: string | null | undefined) {
 
 export function CustomerHomeScreen() {
   const navigation = useNavigation<CustomerHomeNavigation>();
+  const { showToast } = useToast();
   const user = useAppSelector(state => state.auth.user);
-  const defaultPhone = getLinkedPhoneNumber(user);
-  const displayName =
-    user?.full_name || user?.first_name || user?.username || 'Quý khách';
   const [homeData, setHomeData] = useState<CustomerHomeResponse | null>(null);
   const [roundTrip, setRoundTrip] = useState(false);
   const [selectedServiceType, setSelectedServiceType] = useState('coach');
@@ -233,7 +230,11 @@ export function CustomerHomeScreen() {
         clearError instanceof Error
           ? clearError.message
           : 'Không xóa được lịch sử tìm kiếm.';
-      Alert.alert('Không xóa được lịch sử', message);
+      showToast({
+        type: 'error',
+        title: 'Không xóa được lịch sử',
+        message,
+      });
     }
   };
 
@@ -262,57 +263,22 @@ export function CustomerHomeScreen() {
   };
 
   const handleSearch = async () => {
-    if (!defaultSearch?.origin?.id || !defaultSearch.destination?.id) {
-      navigation.navigate('TicketBooking', {
-        initialPhone: defaultPhone,
-        initialPassengerName: displayName,
-      });
-      return;
-    }
-
     setSearching(true);
     try {
-      const params = new URLSearchParams({
-        origin_id: String(defaultSearch.origin.id),
-        destination_id: String(defaultSearch.destination.id),
-        travel_date: defaultSearch.travel_date,
-        service_type: selectedServiceType,
-        passengers: '1',
-      });
-      if (roundTrip && defaultSearch.return_date) {
-        params.set('return_date', defaultSearch.return_date);
+      if (defaultSearch) {
+        await saveRecentSearch(defaultSearch);
       }
-
-      const result = await requestJson<{
-        summary?: {
-          available?: boolean;
-          trip_count?: number;
-        };
-      }>(`/api/nhaxe/odoo/route-search/?${params.toString()}`, {
-        method: 'GET',
-        auth: true,
-        logLabel: 'customer-route-search',
-      });
-
-      if (result.summary && !result.summary.available) {
-        Alert.alert(
-          'Chưa có chuyến phù hợp',
-          'Vui lòng thử chọn ngày khác hoặc tuyến khác.',
-        );
-        return;
-      }
-
-      await saveRecentSearch(defaultSearch);
-      navigation.navigate('TicketBooking', {
-        initialPhone: defaultPhone,
-        initialPassengerName: displayName,
-      });
+      navigation.navigate('TicketSearchResults');
     } catch (searchError) {
       const message =
         searchError instanceof Error
           ? searchError.message
-          : 'Không kiểm tra được tuyến chuyến.';
-      Alert.alert('Không tìm được chuyến', message);
+          : 'Không mở được danh sách chuyến.';
+      showToast({
+        type: 'error',
+        title: 'Không tìm được chuyến',
+        message,
+      });
     } finally {
       setSearching(false);
     }

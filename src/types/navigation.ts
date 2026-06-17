@@ -1,6 +1,8 @@
+import { NavigatorScreenParams } from '@react-navigation/native';
+
 export type RootStackParamList = {
   Login: undefined;
-  MainTabs: undefined;
+  MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
   Profile: undefined;
   EditProfile: undefined;
   VehicleDetail: { vehicleId: number };
@@ -8,6 +10,7 @@ export type RootStackParamList = {
     initialPhone?: string;
     initialPassengerName?: string;
   } | undefined;
+  TicketSearchResults: undefined;
 };
 
 export type MainTabParamList = {

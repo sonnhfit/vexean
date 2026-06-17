@@ -7,7 +7,6 @@ import {
 } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -19,6 +18,7 @@ import {
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { useToast } from '../../components/Toast';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
 
@@ -216,6 +216,7 @@ function parseDateValue(value: string) {
 }
 
 export function DriverManagementScreen() {
+  const { showToast } = useToast();
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [searchText, setSearchText] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
@@ -333,10 +334,11 @@ export function DriverManagementScreen() {
 
   const saveDriver = async () => {
     if (!form.full_name.trim() || !form.license_number.trim()) {
-      Alert.alert(
-        'Thiếu thông tin',
-        'Vui lòng nhập họ tên và số bằng lái tài xế.',
-      );
+      showToast({
+        type: 'warning',
+        title: 'Thiếu thông tin',
+        message: 'Vui lòng nhập họ tên và số bằng lái tài xế.',
+      });
       return;
     }
 
@@ -362,39 +364,47 @@ export function DriverManagementScreen() {
         saveError instanceof Error
           ? saveError.message
           : 'Không thể lưu thông tin tài xế.';
-      Alert.alert('Lưu thất bại', message);
+      showToast({
+        type: 'error',
+        title: 'Lưu thất bại',
+        message,
+      });
     } finally {
       setSaving(false);
     }
   };
 
   const deleteDriver = async (driver: Driver) => {
-    Alert.alert('Xoá tài xế', `Bạn muốn xoá mềm hồ sơ ${driver.full_name}?`, [
-      { text: 'Huỷ', style: 'cancel' },
-      {
-        text: 'Xoá',
-        style: 'destructive',
-        onPress: async () => {
-          setDeletingId(driver.id);
-          try {
-            await requestJson<unknown>(`${DRIVER_ENDPOINT}${driver.id}/`, {
-              method: 'DELETE',
-              auth: true,
-              logLabel: 'odoo-drivers-delete',
-            });
-            await fetchDrivers(appliedSearch, 'initial');
-          } catch (deleteError) {
-            const message =
-              deleteError instanceof Error
-                ? deleteError.message
-                : 'Không thể xoá tài xế.';
-            Alert.alert('Xoá thất bại', message);
-          } finally {
-            setDeletingId(null);
-          }
-        },
+    showToast({
+      type: 'warning',
+      title: 'Xoá tài xế?',
+      message: `Bạn muốn xoá mềm hồ sơ ${driver.full_name}?`,
+      actionLabel: 'Xoá',
+      duration: 7000,
+      onAction: async () => {
+        setDeletingId(driver.id);
+        try {
+          await requestJson<unknown>(`${DRIVER_ENDPOINT}${driver.id}/`, {
+            method: 'DELETE',
+            auth: true,
+            logLabel: 'odoo-drivers-delete',
+          });
+          await fetchDrivers(appliedSearch, 'initial');
+        } catch (deleteError) {
+          const message =
+            deleteError instanceof Error
+              ? deleteError.message
+              : 'Không thể xoá tài xế.';
+          showToast({
+            type: 'error',
+            title: 'Xoá thất bại',
+            message,
+          });
+        } finally {
+          setDeletingId(null);
+        }
       },
-    ]);
+    });
   };
 
   return (

@@ -4,6 +4,7 @@ import { EditProfileScreen } from '../screens/account/EditProfileScreen';
 import { ProfileScreen } from '../screens/account/ProfileScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { TicketBookingScreen } from '../screens/main/TicketBookingScreen';
+import { TicketSearchResultsScreen } from '../screens/main/TicketSearchResultsScreen';
 import { VehicleDetailScreen } from '../screens/main/VehicleDetailScreen';
 import { useAppSelector } from '../store/hooks';
 import { APP_COLORS } from '../theme/colors';
@@ -58,6 +59,11 @@ export function RootNavigator() {
           <Stack.Screen
             name="TicketBooking"
             component={TicketBookingScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="TicketSearchResults"
+            component={TicketSearchResultsScreen}
             options={{ headerShown: false }}
           />
         </>

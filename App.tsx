@@ -3,6 +3,7 @@ import { StatusBar, useColorScheme } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider } from 'react-redux';
+import { ToastProvider } from './src/components/Toast';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { bootstrapAuth } from './src/store/authSlice';
 import { useAppDispatch } from './src/store/hooks';
@@ -38,10 +39,12 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer theme={isDarkMode ? darkNavigationTheme : lightNavigationTheme}>
-        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-        <RootNavigator />
-      </NavigationContainer>
+      <ToastProvider>
+        <NavigationContainer theme={isDarkMode ? darkNavigationTheme : lightNavigationTheme}>
+          <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+          <RootNavigator />
+        </NavigationContainer>
+      </ToastProvider>
     </SafeAreaProvider>
   );
 }

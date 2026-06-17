@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +11,7 @@ import Ionicons from '@react-native-vector-icons/ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { useToast } from '../../components/Toast';
 import { updateProfile } from '../../store/authSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
@@ -21,6 +21,7 @@ import { getLinkedPhoneNumber } from '../../utils/userPhone';
 type Props = NativeStackScreenProps<RootStackParamList, 'EditProfile'>;
 
 export function EditProfileScreen({ navigation }: Props) {
+  const { showToast } = useToast();
   const dispatch = useAppDispatch();
   const user = useAppSelector(state => state.auth.user);
   const linkedPhone = useMemo(() => getLinkedPhoneNumber(user), [user]);
@@ -33,7 +34,11 @@ export function EditProfileScreen({ navigation }: Props) {
 
   const saveProfile = async () => {
     if (!user) {
-      Alert.alert('Chưa đăng nhập', 'Vui lòng đăng nhập lại để cập nhật hồ sơ.');
+      showToast({
+        type: 'warning',
+        title: 'Chưa đăng nhập',
+        message: 'Vui lòng đăng nhập lại để cập nhật hồ sơ.',
+      });
       return;
     }
 
@@ -47,18 +52,22 @@ export function EditProfileScreen({ navigation }: Props) {
     setSaving(true);
     try {
       await dispatch(updateProfile(payload)).unwrap();
-      Alert.alert('Đã cập nhật', 'Thông tin cá nhân đã được lưu.', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      showToast({
+        type: 'success',
+        title: 'Đã cập nhật',
+        message: 'Thông tin cá nhân đã được lưu.',
+      });
+      navigation.goBack();
     } catch (error) {
       const message =
         typeof error === 'string'
           ? error
           : 'Không cập nhật được hồ sơ. Vui lòng thử lại.';
-      Alert.alert('Cập nhật thất bại', message);
+      showToast({
+        type: 'error',
+        title: 'Cập nhật thất bại',
+        message,
+      });
     } finally {
       setSaving(false);
     }

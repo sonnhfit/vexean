@@ -7,7 +7,6 @@ import {
 } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -19,6 +18,7 @@ import {
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { useToast } from '../../components/Toast';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
 import { Vehicle, VehicleStatus } from '../../types/vehicle';
@@ -228,6 +228,7 @@ function parseDateValue(value: string) {
 }
 
 export function FleetManagementScreen() {
+  const { showToast } = useToast();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [searchText, setSearchText] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
@@ -345,12 +346,20 @@ export function FleetManagementScreen() {
 
   const saveVehicle = async () => {
     if (!form.license_plate.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập biển số xe.');
+      showToast({
+        type: 'warning',
+        title: 'Thiếu thông tin',
+        message: 'Vui lòng nhập biển số xe.',
+      });
       return;
     }
 
     if (!toOptionalNumber(form.seat_count)) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập số ghế hợp lệ.');
+      showToast({
+        type: 'warning',
+        title: 'Thiếu thông tin',
+        message: 'Vui lòng nhập số ghế hợp lệ.',
+      });
       return;
     }
 
@@ -380,39 +389,47 @@ export function FleetManagementScreen() {
         saveError instanceof Error
           ? saveError.message
           : 'Không thể lưu thông tin xe.';
-      Alert.alert('Lưu thất bại', message);
+      showToast({
+        type: 'error',
+        title: 'Lưu thất bại',
+        message,
+      });
     } finally {
       setSaving(false);
     }
   };
 
   const deleteVehicle = async (vehicle: Vehicle) => {
-    Alert.alert('Xoá xe', `Bạn muốn xoá mềm xe ${vehicle.license_plate}?`, [
-      { text: 'Huỷ', style: 'cancel' },
-      {
-        text: 'Xoá',
-        style: 'destructive',
-        onPress: async () => {
-          setDeletingId(vehicle.id);
-          try {
-            await requestJson<unknown>(`${VEHICLE_ENDPOINT}${vehicle.id}/`, {
-              method: 'DELETE',
-              auth: true,
-              logLabel: 'odoo-vehicles-delete',
-            });
-            await fetchVehicles(appliedSearch, 'initial');
-          } catch (deleteError) {
-            const message =
-              deleteError instanceof Error
-                ? deleteError.message
-                : 'Không thể xoá xe.';
-            Alert.alert('Xoá thất bại', message);
-          } finally {
-            setDeletingId(null);
-          }
-        },
+    showToast({
+      type: 'warning',
+      title: 'Xoá xe?',
+      message: `Bạn muốn xoá mềm xe ${vehicle.license_plate}?`,
+      actionLabel: 'Xoá',
+      duration: 7000,
+      onAction: async () => {
+        setDeletingId(vehicle.id);
+        try {
+          await requestJson<unknown>(`${VEHICLE_ENDPOINT}${vehicle.id}/`, {
+            method: 'DELETE',
+            auth: true,
+            logLabel: 'odoo-vehicles-delete',
+          });
+          await fetchVehicles(appliedSearch, 'initial');
+        } catch (deleteError) {
+          const message =
+            deleteError instanceof Error
+              ? deleteError.message
+              : 'Không thể xoá xe.';
+          showToast({
+            type: 'error',
+            title: 'Xoá thất bại',
+            message,
+          });
+        } finally {
+          setDeletingId(null);
+        }
       },
-    ]);
+    });
   };
 
   return (

@@ -7,7 +7,6 @@ import {
 } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -19,6 +18,7 @@ import Ionicons from '@react-native-vector-icons/ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { useToast } from '../../components/Toast';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
 import { RootStackParamList } from '../../types/navigation';
@@ -216,6 +216,7 @@ function getAutoPassengerName(phone: string) {
 }
 
 export function TicketBookingScreen({ route, navigation }: Props) {
+  const { showToast } = useToast();
   const initialPhone = route.params?.initialPhone || '';
   const initialPassengerName = route.params?.initialPassengerName || '';
   const today = useMemo(() => formatLocalDate(new Date()), []);
@@ -427,17 +428,19 @@ export function TicketBookingScreen({ route, navigation }: Props) {
       );
       const bookedTickets = data.tickets || (data.ticket ? [data.ticket] : []);
 
-      Alert.alert(
-        'Đặt vé thành công',
-        bookedTickets.length > 0
-          ? bookedTickets
-              .map(ticket => {
-                const seatName = relationName(ticket.seat_id);
-                return `${ticket.name}${seatName !== 'Chưa cập nhật' ? ` - ghế ${seatName}` : ''}`;
-              })
-              .join('\n')
-          : `Đã đặt ${data.total_tickets || selectedSeats.length} vé.`,
-      );
+      showToast({
+        type: 'success',
+        title: 'Đặt vé thành công',
+        message:
+          bookedTickets.length > 0
+            ? bookedTickets
+                .map(ticket => {
+                  const seatName = relationName(ticket.seat_id);
+                  return `${ticket.name}${seatName !== 'Chưa cập nhật' ? ` - ghế ${seatName}` : ''}`;
+                })
+                .join('\n')
+            : `Đã đặt ${data.total_tickets || selectedSeats.length} vé.`,
+      });
       setSelectedSeats([]);
       await fetchTripDetail(selectedTripForSummary);
       await fetchTrips('refresh');
