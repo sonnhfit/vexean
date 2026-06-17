@@ -1,6 +1,8 @@
-import { ComponentProps, useState } from 'react';
+import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,6 +13,7 @@ import { CompositeNavigationProp, useNavigation } from '@react-navigation/native
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { requestJson } from '../../services/apiClient';
 import { useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 import { MainTabParamList, RootStackParamList } from '../../types/navigation';
@@ -23,15 +26,132 @@ type CustomerHomeNavigation = CompositeNavigationProp<
 >;
 
 const recentSearches = [
-  { from: 'Hồ Chí Minh', to: 'Bà Rịa-Vũng Tàu', date: 'T6, 19/09/2025' },
-  { from: 'Hồ Chí Minh', to: 'Bà Rịa-Vũng Tàu', date: 'T7, 20/09/2025' },
+  {
+    id: 'fallback-1',
+    from: 'Hồ Chí Minh',
+    to: 'Bà Rịa-Vũng Tàu',
+    date: '19/09/2025',
+  },
+  {
+    id: 'fallback-2',
+    from: 'Hồ Chí Minh',
+    to: 'Bà Rịa-Vũng Tàu',
+    date: '20/09/2025',
+  },
 ];
 
 const popularRoutes = [
-  { title: 'Sapa', color: '#5c9f92' },
-  { title: 'Hạ Long', color: '#4d8ea1' },
-  { title: 'Đà Lạt', color: '#7b8f76' },
+  { id: 'fallback-sapa', title: 'Sapa', color: '#5c9f92' },
+  { id: 'fallback-ha-long', title: 'Hạ Long', color: '#4d8ea1' },
+  { id: 'fallback-da-lat', title: 'Đà Lạt', color: '#7b8f76' },
 ];
+
+const defaultServices: CustomerHomeServiceType[] = [
+  { id: 'coach', label: 'Xe khách', icon: 'bus', active: true },
+  {
+    id: 'limousine',
+    label: 'Limousine',
+    icon: 'sparkles-outline',
+    active: true,
+  },
+  { id: 'seat', label: 'Ghế ngồi', icon: 'ticket-outline', active: true },
+  { id: 'sleeper', label: 'Giường nằm', icon: 'bed-outline', active: true },
+];
+
+const defaultBenefits: CustomerHomeBenefit[] = [
+  { id: 'guaranteed-seat', icon: 'shield-checkmark', text: 'Chắc chắn có chỗ' },
+  { id: 'support', icon: 'headset', text: 'Hỗ trợ 24/7' },
+  { id: 'deals', icon: 'pricetag', text: 'Nhiều ưu đãi' },
+  { id: 'payment', icon: 'cash', text: 'Thanh toán đa dạng' },
+];
+
+type CustomerHomeLocation = {
+  id: number;
+  name: string;
+  province?: string;
+  type?: string;
+  slug?: string;
+  display_name?: string;
+  active?: boolean;
+};
+
+type CustomerHomeServiceType = {
+  id: string;
+  label: string;
+  icon: string;
+  active?: boolean;
+};
+
+type CustomerHomeBenefit = {
+  id: string;
+  icon: string;
+  text: string;
+};
+
+type CustomerHomeSearch = {
+  origin: CustomerHomeLocation | null;
+  destination: CustomerHomeLocation | null;
+  travel_date: string;
+  round_trip: boolean;
+  return_date: string | null;
+};
+
+type CustomerHomeRecentSearch = {
+  id: number;
+  origin: CustomerHomeLocation;
+  destination: CustomerHomeLocation;
+  travel_date: string;
+  return_date: string | null;
+  round_trip: boolean;
+  service_type?: string;
+  created_at?: string;
+};
+
+type CustomerHomePopularRoute = {
+  id: number;
+  origin?: CustomerHomeLocation;
+  destination?: CustomerHomeLocation;
+  title: string;
+  subtitle?: string;
+  image_url?: string;
+  color?: string;
+  min_price?: number | null;
+  trip_count?: number;
+  score?: number;
+};
+
+type CustomerHomeResponse = {
+  user: {
+    display_name?: string;
+    phone?: string;
+  } | null;
+  default_search: CustomerHomeSearch;
+  service_types: CustomerHomeServiceType[];
+  benefits: CustomerHomeBenefit[];
+  recent_searches: CustomerHomeRecentSearch[];
+  popular_routes: CustomerHomePopularRoute[];
+  meta?: {
+    server_time?: string;
+    updated_at?: string;
+  };
+};
+
+function formatTravelDate(value: string | null | undefined) {
+  if (!value) {
+    return 'Ngày đi';
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
 
 export function CustomerHomeScreen() {
   const navigation = useNavigation<CustomerHomeNavigation>();
@@ -39,13 +159,215 @@ export function CustomerHomeScreen() {
   const defaultPhone = getLinkedPhoneNumber(user);
   const displayName =
     user?.full_name || user?.first_name || user?.username || 'Quý khách';
+  const [homeData, setHomeData] = useState<CustomerHomeResponse | null>(null);
   const [roundTrip, setRoundTrip] = useState(false);
+  const [selectedServiceType, setSelectedServiceType] = useState('coach');
+  const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadHome = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
+    if (mode === 'initial') {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+    setError(null);
+
+    try {
+      const data = await requestJson<CustomerHomeResponse>(
+        '/api/nhaxe/customer/home/?limit_recent=5&limit_popular=10',
+        {
+          method: 'GET',
+          auth: true,
+          logLabel: 'customer-home',
+        },
+      );
+
+      setHomeData(data);
+      setRoundTrip(data.default_search.round_trip);
+      setSelectedServiceType(current => {
+        if (data.service_types.some(service => service.id === current)) {
+          return current;
+        }
+
+        return (
+          data.service_types.find(service => service.active)?.id ||
+          data.service_types[0]?.id ||
+          'coach'
+        );
+      });
+    } catch (homeError) {
+      const message =
+        homeError instanceof Error
+          ? homeError.message
+          : 'Không tải được dữ liệu trang chủ.';
+      setError(message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHome('initial');
+  }, [loadHome]);
+
+  const onRefresh = useCallback(() => {
+    loadHome('refresh');
+  }, [loadHome]);
+
+  const clearRecentSearches = async () => {
+    try {
+      await requestJson('/api/nhaxe/customer/recent-searches/', {
+        method: 'DELETE',
+        auth: true,
+        logLabel: 'customer-clear-recent-searches',
+      });
+      setHomeData(current =>
+        current ? { ...current, recent_searches: [] } : current,
+      );
+    } catch (clearError) {
+      const message =
+        clearError instanceof Error
+          ? clearError.message
+          : 'Không xóa được lịch sử tìm kiếm.';
+      Alert.alert('Không xóa được lịch sử', message);
+    }
+  };
+
+  const saveRecentSearch = async (search: CustomerHomeSearch) => {
+    if (!search.origin?.id || !search.destination?.id) {
+      return;
+    }
+
+    try {
+      await requestJson('/api/nhaxe/customer/recent-searches/', {
+        method: 'POST',
+        auth: true,
+        body: {
+          origin_id: search.origin.id,
+          destination_id: search.destination.id,
+          travel_date: search.travel_date,
+          return_date: search.return_date,
+          round_trip: roundTrip,
+          service_type: selectedServiceType,
+        },
+        logLabel: 'customer-save-recent-search',
+      });
+    } catch {
+      // Recent search is nice-to-have; do not block booking search on it.
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!defaultSearch?.origin?.id || !defaultSearch.destination?.id) {
+      navigation.navigate('TicketBooking', {
+        initialPhone: defaultPhone,
+        initialPassengerName: displayName,
+      });
+      return;
+    }
+
+    setSearching(true);
+    try {
+      const params = new URLSearchParams({
+        origin_id: String(defaultSearch.origin.id),
+        destination_id: String(defaultSearch.destination.id),
+        travel_date: defaultSearch.travel_date,
+        service_type: selectedServiceType,
+        passengers: '1',
+      });
+      if (roundTrip && defaultSearch.return_date) {
+        params.set('return_date', defaultSearch.return_date);
+      }
+
+      const result = await requestJson<{
+        summary?: {
+          available?: boolean;
+          trip_count?: number;
+        };
+      }>(`/api/nhaxe/odoo/route-search/?${params.toString()}`, {
+        method: 'GET',
+        auth: true,
+        logLabel: 'customer-route-search',
+      });
+
+      if (result.summary && !result.summary.available) {
+        Alert.alert(
+          'Chưa có chuyến phù hợp',
+          'Vui lòng thử chọn ngày khác hoặc tuyến khác.',
+        );
+        return;
+      }
+
+      await saveRecentSearch(defaultSearch);
+      navigation.navigate('TicketBooking', {
+        initialPhone: defaultPhone,
+        initialPassengerName: displayName,
+      });
+    } catch (searchError) {
+      const message =
+        searchError instanceof Error
+          ? searchError.message
+          : 'Không kiểm tra được tuyến chuyến.';
+      Alert.alert('Không tìm được chuyến', message);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const defaultSearch = homeData?.default_search;
+  const services = homeData?.service_types.length
+    ? homeData.service_types
+    : defaultServices;
+  const benefits = homeData?.benefits.length ? homeData.benefits : defaultBenefits;
+  const renderedRecentSearches = homeData?.recent_searches.length
+    ? homeData.recent_searches.map(item => ({
+        id: String(item.id),
+        from: item.origin.name,
+        to: item.destination.name,
+        date: formatTravelDate(item.travel_date),
+      }))
+    : recentSearches;
+  const renderedPopularRoutes = homeData?.popular_routes.length
+    ? homeData.popular_routes.map((route, index) => ({
+        id: String(route.id),
+        title: route.title || route.destination?.name || 'Tuyến phổ biến',
+        color:
+          route.color ||
+          popularRoutes[index % popularRoutes.length]?.color ||
+          APP_COLORS.primaryDark,
+      }))
+    : popularRoutes;
+
+  const canClearRecentSearches = Boolean(homeData?.recent_searches.length);
+  const selectedOrigin = defaultSearch?.origin?.name || 'Hồ Chí Minh';
+  const selectedDestination =
+    defaultSearch?.destination?.name || 'Bà Rịa-Vũng Tàu';
+  const selectedTravelDate = formatTravelDate(defaultSearch?.travel_date);
+  const refreshLabel = useMemo(() => {
+    if (loading) {
+      return 'Đang tải dữ liệu...';
+    }
+    return error;
+  }, [error, loading]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={APP_COLORS.surface}
+            colors={[APP_COLORS.primaryDark, APP_COLORS.info]}
+            progressBackgroundColor={APP_COLORS.surface}
+          />
+        }
       >
         <View style={styles.hero}>
           <View style={styles.heroTop}>
@@ -81,10 +403,15 @@ export function CustomerHomeScreen() {
 
         <View style={styles.searchCard}>
           <View style={styles.transportTabs}>
-            <TransportTab icon="bus" label="Xe khách" active />
-            <TransportTab icon="sparkles-outline" label="Limousine" />
-            <TransportTab icon="ticket-outline" label="Ghế ngồi" />
-            <TransportTab icon="bed-outline" label="Giường nằm" />
+            {services.map(service => (
+              <TransportTab
+                key={service.id}
+                icon={service.icon as IconName}
+                label={service.label}
+                active={selectedServiceType === service.id}
+                onPress={() => setSelectedServiceType(service.id)}
+              />
+            ))}
           </View>
 
           <View style={styles.routeBlock}>
@@ -94,9 +421,9 @@ export function CustomerHomeScreen() {
               <View style={styles.dotRed} />
             </View>
             <View style={styles.routeFields}>
-              <RouteField label="Nơi xuất phát" value="Hồ Chí Minh" />
+              <RouteField label="Nơi xuất phát" value={selectedOrigin} />
               <View style={styles.divider} />
-              <RouteField label="Bạn muốn đi đâu?" value="Bà Rịa-Vũng Tàu" />
+              <RouteField label="Bạn muốn đi đâu?" value={selectedDestination} />
             </View>
             <Pressable style={styles.swapButton}>
               <Ionicons name="swap-vertical" size={22} color="#555555" />
@@ -106,7 +433,7 @@ export function CustomerHomeScreen() {
           <View style={styles.dateRow}>
             <View style={styles.dateField}>
               <Ionicons name="calendar-outline" size={22} color={APP_COLORS.primaryDark} />
-              <Text style={styles.dateLabel}>Ngày đi</Text>
+              <Text style={styles.dateLabel}>{selectedTravelDate}</Text>
             </View>
             <View style={styles.roundTripWrap}>
               <Text style={styles.roundTripText}>Khứ hồi</Text>
@@ -122,26 +449,32 @@ export function CustomerHomeScreen() {
 
         <Pressable
           style={styles.searchButton}
-          onPress={() =>
-            navigation.navigate('TicketBooking', {
-              initialPhone: defaultPhone,
-              initialPassengerName: displayName,
-            })
-          }
+          onPress={handleSearch}
+          disabled={searching}
         >
-          <Text style={styles.searchButtonText}>Tìm kiếm</Text>
+          <Text style={styles.searchButtonText}>
+            {searching ? 'Đang tìm...' : 'Tìm kiếm'}
+          </Text>
         </Pressable>
 
+        {refreshLabel ? <Text style={styles.feedbackText}>{refreshLabel}</Text> : null}
+
         <View style={styles.benefitRow}>
-          <Benefit icon="shield-checkmark" text="Chắc chắn có chỗ" />
-          <Benefit icon="headset" text="Hỗ trợ 24/7" />
-          <Benefit icon="pricetag" text="Nhiều ưu đãi" />
-          <Benefit icon="cash" text="Thanh toán đa dạng" />
+          {benefits.map(benefit => (
+            <Benefit
+              key={benefit.id}
+              icon={benefit.icon as IconName}
+              text={benefit.text}
+            />
+          ))}
         </View>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Tìm kiếm gần đây</Text>
-          <Pressable>
+          <Pressable
+            onPress={clearRecentSearches}
+            disabled={!canClearRecentSearches}
+          >
             <Text style={styles.clearText}>Xóa tất cả</Text>
           </Pressable>
         </View>
@@ -150,8 +483,8 @@ export function CustomerHomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.recentList}
         >
-          {recentSearches.map(item => (
-            <View key={item.date} style={styles.recentCard}>
+          {renderedRecentSearches.map(item => (
+            <View key={item.id} style={styles.recentCard}>
               <View style={styles.recentRoute}>
                 <View style={styles.smallDots}>
                   <View style={styles.smallDotBlue} />
@@ -174,9 +507,9 @@ export function CustomerHomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.popularList}
         >
-          {popularRoutes.map(route => (
+          {renderedPopularRoutes.map(route => (
             <View
-              key={route.title}
+              key={route.id}
               style={[styles.popularCard, { backgroundColor: route.color }]}
             >
               <Text style={styles.popularText}>{route.title}</Text>
@@ -193,14 +526,16 @@ function TransportTab({
   label,
   active = false,
   badge,
+  onPress,
 }: {
   icon: IconName;
   label: string;
   active?: boolean;
   badge?: string;
+  onPress?: () => void;
 }) {
   return (
-    <View style={styles.transportTab}>
+    <Pressable style={styles.transportTab} onPress={onPress}>
       {badge ? (
         <View style={styles.transportBadge}>
           <Text style={styles.transportBadgeText}>{badge}</Text>
@@ -215,7 +550,7 @@ function TransportTab({
         {label}
       </Text>
       {active ? <View style={styles.transportIndicator} /> : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -476,6 +811,12 @@ const styles = StyleSheet.create({
     color: '#111111',
     fontSize: 17,
     fontWeight: '700',
+  },
+  feedbackText: {
+    marginHorizontal: 18,
+    marginTop: 10,
+    color: APP_COLORS.textSecondary,
+    fontSize: 13,
   },
   benefitRow: {
     flexDirection: 'row',
