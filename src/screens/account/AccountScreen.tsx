@@ -71,11 +71,13 @@ export function AccountScreen() {
                 <Text style={styles.memberText}>Quản lý quyền lợi và thông tin cá nhân</Text>
               </View>
               <View style={styles.headerProfileIcon}>
-                <Ionicons
-                  name="person-circle-outline"
-                  size={30}
-                  color={APP_COLORS.surface}
-                />
+                <Pressable onPress={() => navigation.navigate('Profile')}>
+                  <Ionicons
+                    name="person-circle-outline"
+                    size={30}
+                    color={APP_COLORS.surface}
+                  />
+                </Pressable>
               </View>
             </View>
           </View>
@@ -85,42 +87,63 @@ export function AccountScreen() {
               icon="star-outline"
               title="Điểm thưởng của tôi"
               text="Tích lũy điểm thưởng để đổi ưu đãi hấp dẫn"
-              locked
+              onPress={() => navigation.navigate('AccountDetail', { section: 'rewards' })}
             />
             <CustomerMenuItem
               icon="pricetag-outline"
               title="Ưu đãi"
               text="Xem danh sách các ưu đãi dành riêng cho bạn"
-              locked
+              onPress={() => navigation.navigate('AccountDetail', { section: 'offers' })}
             />
             <CustomerMenuItem
               icon="gift-outline"
               title="Giới thiệu nhận quà"
               badge="Mới"
-              locked
+              onPress={() => navigation.navigate('AccountDetail', { section: 'referral' })}
             />
             <CustomerMenuItem
               icon="card-outline"
               title="Quản lý thẻ"
               text="Lưu thẻ và thanh toán chỉ với 1 chạm"
-              locked
+              onPress={() => navigation.navigate('AccountDetail', { section: 'cards' })}
             />
             <CustomerMenuItem
               icon="create-outline"
               title="Đánh giá chuyến đi"
               text="Chia sẻ cảm nhận để nhận điểm thưởng"
-              locked
+              onPress={() => navigation.navigate('AccountDetail', { section: 'reviews' })}
             />
           </View>
 
           <View style={styles.customerDivider} />
 
           <View style={styles.customerMenu}>
-            <CustomerMenuItem icon="settings-outline" title="Cài đặt" value="v8.9.51p" />
-            <CustomerMenuItem icon="help-circle-outline" title="Trung tâm Hỗ trợ" />
-            <CustomerMenuItem icon="mail-outline" title="Góp ý" />
-            <CustomerMenuItem icon="briefcase-outline" title="Cơ hội cùng An Nhiên" />
-            <CustomerMenuItem icon="bus-outline" title="Về An Nhiên" />
+            <CustomerMenuItem
+              icon="settings-outline"
+              title="Cài đặt"
+              value="v8.9.51p"
+              onPress={() => navigation.navigate('AccountDetail', { section: 'settings' })}
+            />
+            <CustomerMenuItem
+              icon="help-circle-outline"
+              title="Trung tâm Hỗ trợ"
+              onPress={() => navigation.navigate('AccountDetail', { section: 'support' })}
+            />
+            <CustomerMenuItem
+              icon="mail-outline"
+              title="Góp ý"
+              onPress={() => navigation.navigate('AccountDetail', { section: 'feedback' })}
+            />
+            <CustomerMenuItem
+              icon="briefcase-outline"
+              title="Cơ hội cùng An Nhiên"
+              onPress={() => navigation.navigate('AccountDetail', { section: 'careers' })}
+            />
+            <CustomerMenuItem
+              icon="bus-outline"
+              title="Về An Nhiên"
+              onPress={() => navigation.navigate('AccountDetail', { section: 'about' })}
+            />
           </View>
 
           <View style={styles.languageRow}>
@@ -184,17 +207,17 @@ function CustomerMenuItem({
   text,
   badge,
   value,
-  locked = false,
+  onPress,
 }: {
   icon: ComponentProps<typeof Ionicons>['name'];
   title: string;
   text?: string;
   badge?: string;
   value?: string;
-  locked?: boolean;
+  onPress?: () => void;
 }) {
   return (
-    <Pressable style={styles.customerMenuItem}>
+    <Pressable style={styles.customerMenuItem} onPress={onPress}>
       <Ionicons name={icon} size={24} color={APP_COLORS.primaryDark} />
       <View style={styles.customerMenuTextWrap}>
         <View style={styles.customerMenuTitleRow}>
@@ -207,14 +230,10 @@ function CustomerMenuItem({
         </View>
         {text ? <Text style={styles.customerMenuText}>{text}</Text> : null}
       </View>
-      {locked ? (
-        <Ionicons name="lock-closed" size={20} color="#000000" />
-      ) : (
-        <View style={styles.menuRight}>
-          {value ? <Text style={styles.menuValue}>{value}</Text> : null}
-          <Ionicons name="chevron-forward" size={22} color="#8a8a8a" />
-        </View>
-      )}
+      <View style={styles.menuRight}>
+        {value ? <Text style={styles.menuValue}>{value}</Text> : null}
+        <Ionicons name="chevron-forward" size={22} color="#8a8a8a" />
+      </View>
     </Pressable>
   );
 }

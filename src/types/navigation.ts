@@ -5,6 +5,19 @@ export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
   Profile: undefined;
   EditProfile: undefined;
+  AccountDetail: {
+    section:
+      | 'rewards'
+      | 'offers'
+      | 'referral'
+      | 'cards'
+      | 'reviews'
+      | 'settings'
+      | 'support'
+      | 'feedback'
+      | 'careers'
+      | 'about';
+  };
   VehicleDetail: { vehicleId: number };
   TicketBooking: {
     initialPhone?: string;

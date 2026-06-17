@@ -1,5 +1,6 @@
 import { ActivityIndicator, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { AccountDetailScreen } from '../screens/account/AccountDetailScreen';
 import { EditProfileScreen } from '../screens/account/EditProfileScreen';
 import { ProfileScreen } from '../screens/account/ProfileScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
@@ -50,6 +51,11 @@ export function RootNavigator() {
             name="EditProfile"
             component={EditProfileScreen}
             options={{ title: 'Chỉnh sửa hồ sơ' }}
+          />
+          <Stack.Screen
+            name="AccountDetail"
+            component={AccountDetailScreen}
+            options={{ headerShown: false }}
           />
           <Stack.Screen
             name="VehicleDetail"
