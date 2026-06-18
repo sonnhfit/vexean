@@ -135,6 +135,39 @@ type CustomerHomeResponse = {
   };
 };
 
+type CustomerRouteSearchResponse = {
+  query: {
+    origin_id: number;
+    destination_id: number;
+    travel_date: string;
+    return_date: string | null;
+    service_type: string;
+    passengers: number;
+  };
+  summary: {
+    available: boolean;
+    trip_count: number;
+    min_price: number | null;
+    max_price: number | null;
+  };
+  routes: {
+    id: number;
+    name: string;
+    origin: {
+      id: number;
+      name: string;
+    };
+    destination: {
+      id: number;
+      name: string;
+    };
+    trip_count: number;
+    min_price: number | null;
+    first_departure_time?: string;
+    last_departure_time?: string;
+  }[];
+};
+
 function formatTravelDate(value: string | null | undefined) {
   if (!value) {
     return 'Ngày đi';
@@ -152,12 +185,21 @@ function formatTravelDate(value: string | null | undefined) {
   });
 }
 
+function swapSearchRoute(search: CustomerHomeSearch): CustomerHomeSearch {
+  return {
+    ...search,
+    origin: search.destination,
+    destination: search.origin,
+  };
+}
+
 export function CustomerHomeScreen() {
   const navigation = useNavigation<CustomerHomeNavigation>();
   const { showToast } = useToast();
   const user = useAppSelector(state => state.auth.user);
   const [homeData, setHomeData] = useState<CustomerHomeResponse | null>(null);
   const [roundTrip, setRoundTrip] = useState(false);
+  const [routeSwapped, setRouteSwapped] = useState(false);
   const [selectedServiceType, setSelectedServiceType] = useState('coach');
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -184,6 +226,7 @@ export function CustomerHomeScreen() {
 
       setHomeData(data);
       setRoundTrip(data.default_search.round_trip);
+      setRouteSwapped(false);
       setSelectedServiceType(current => {
         if (data.service_types.some(service => service.id === current)) {
           return current;
@@ -262,13 +305,69 @@ export function CustomerHomeScreen() {
     }
   };
 
+  const findRoute = async (search: CustomerHomeSearch) => {
+    if (!search.origin?.id || !search.destination?.id) {
+      throw new Error('Vui lòng chọn nơi xuất phát và nơi đến.');
+    }
+
+    const params = new URLSearchParams({
+      origin_id: String(search.origin.id),
+      destination_id: String(search.destination.id),
+      travel_date: search.travel_date,
+      service_type: selectedServiceType,
+      passengers: '1',
+    });
+
+    if (roundTrip && search.return_date) {
+      params.set('return_date', search.return_date);
+    }
+
+    return requestJson<CustomerRouteSearchResponse>(
+      `/api/nhaxe/odoo/route-search/?${params.toString()}`,
+      {
+        method: 'GET',
+        logLabel: 'customer-route-search',
+      },
+    );
+  };
+
   const handleSearch = async () => {
+    if (!activeSearch) {
+      showToast({
+        type: 'error',
+        title: 'Chưa có dữ liệu tìm kiếm',
+        message: 'Vui lòng tải lại trang chủ rồi thử lại.',
+      });
+      return;
+    }
+
     setSearching(true);
     try {
-      if (defaultSearch) {
-        await saveRecentSearch(defaultSearch);
+      const routeSearch = await findRoute(activeSearch);
+      const selectedRoute = routeSearch.routes[0];
+      if (!routeSearch.summary.available || !selectedRoute) {
+        showToast({
+          type: 'info',
+          title: 'Chưa có chuyến phù hợp',
+          message: 'Bạn thử đổi ngày đi hoặc tuyến đường khác nhé.',
+        });
+        return;
       }
-      navigation.navigate('TicketSearchResults');
+
+      await saveRecentSearch(activeSearch);
+      navigation.navigate('TicketSearchResults', {
+        routeId: selectedRoute.id,
+        originName: activeSearch.origin?.name || selectedRoute.origin.name,
+        destinationName:
+          activeSearch.destination?.name || selectedRoute.destination.name,
+        travelDate: activeSearch.travel_date,
+        returnDate: roundTrip ? activeSearch.return_date : null,
+        serviceType: selectedServiceType,
+        passengers: routeSearch.query.passengers,
+        tripCount: routeSearch.summary.trip_count,
+        minPrice: routeSearch.summary.min_price,
+        maxPrice: routeSearch.summary.max_price,
+      });
     } catch (searchError) {
       const message =
         searchError instanceof Error
@@ -285,6 +384,13 @@ export function CustomerHomeScreen() {
   };
 
   const defaultSearch = homeData?.default_search;
+  const activeSearch = useMemo(() => {
+    if (!defaultSearch) {
+      return null;
+    }
+
+    return routeSwapped ? swapSearchRoute(defaultSearch) : defaultSearch;
+  }, [defaultSearch, routeSwapped]);
   const services = homeData?.service_types.length
     ? homeData.service_types
     : defaultServices;
@@ -309,10 +415,12 @@ export function CustomerHomeScreen() {
     : popularRoutes;
 
   const canClearRecentSearches = Boolean(homeData?.recent_searches.length);
-  const selectedOrigin = defaultSearch?.origin?.name || 'Hồ Chí Minh';
+  const fallbackOrigin = routeSwapped ? 'Bà Rịa-Vũng Tàu' : 'Hồ Chí Minh';
+  const fallbackDestination = routeSwapped ? 'Hồ Chí Minh' : 'Bà Rịa-Vũng Tàu';
+  const selectedOrigin = activeSearch?.origin?.name || fallbackOrigin;
   const selectedDestination =
-    defaultSearch?.destination?.name || 'Bà Rịa-Vũng Tàu';
-  const selectedTravelDate = formatTravelDate(defaultSearch?.travel_date);
+    activeSearch?.destination?.name || fallbackDestination;
+  const selectedTravelDate = formatTravelDate(activeSearch?.travel_date);
   const refreshLabel = useMemo(() => {
     if (loading) {
       return 'Đang tải dữ liệu...';
@@ -391,7 +499,12 @@ export function CustomerHomeScreen() {
               <View style={styles.divider} />
               <RouteField label="Bạn muốn đi đâu?" value={selectedDestination} />
             </View>
-            <Pressable style={styles.swapButton}>
+            <Pressable
+              style={styles.swapButton}
+              onPress={() => setRouteSwapped(value => !value)}
+              accessibilityRole="button"
+              accessibilityLabel="Đảo nơi xuất phát và nơi đến"
+            >
               <Ionicons name="swap-vertical" size={22} color="#555555" />
             </Pressable>
           </View>

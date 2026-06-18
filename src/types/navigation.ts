@@ -23,7 +23,18 @@ export type RootStackParamList = {
     initialPhone?: string;
     initialPassengerName?: string;
   } | undefined;
-  TicketSearchResults: undefined;
+  TicketSearchResults: {
+    routeId: number;
+    originName: string;
+    destinationName: string;
+    travelDate: string;
+    returnDate?: string | null;
+    serviceType?: string;
+    passengers?: number;
+    tripCount?: number;
+    minPrice?: number | null;
+    maxPrice?: number | null;
+  };
 };
 
 export type MainTabParamList = {

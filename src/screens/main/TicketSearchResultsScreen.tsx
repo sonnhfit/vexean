@@ -1,6 +1,8 @@
-import { ComponentProps, useState } from 'react';
+import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,27 +12,237 @@ import Ionicons from '@react-native-vector-icons/ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useToast } from '../../components/Toast';
-import {
-  addFavoriteTrip,
-  formatTripPrice,
-  isFavoriteTrip,
-  MockTrip,
-  mockTrips,
-} from '../../data/mockTrips';
+import { formatTripPrice } from '../../data/mockTrips';
+import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
 import { RootStackParamList } from '../../types/navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TicketSearchResults'>;
 type IconName = ComponentProps<typeof Ionicons>['name'];
+type OdooRelation = false | [number, string];
 
-export function TicketSearchResultsScreen({ navigation }: Props) {
+type OdooTripSummary = {
+  id: number;
+  name: string;
+  state: string;
+  route_id: OdooRelation;
+  vehicle_id: OdooRelation;
+  driver_id?: OdooRelation;
+  departure_time: string;
+  arrival_time?: string;
+  price: number | string;
+  total_seats: number;
+  booked_seats: number;
+  available_seats: number;
+  route?: {
+    id?: number;
+    name?: string;
+    code?: string;
+    origin?: string;
+    destination?: string;
+    distance_km?: number;
+    duration_hours?: number;
+    price?: number;
+  };
+  vehicle?: {
+    id?: number;
+    name?: string;
+    license_plate?: string;
+    vehicle_type?: string;
+    capacity?: number;
+    floor_count?: number;
+    seat_layout?: string;
+  };
+  driver?: {
+    id?: number;
+    name?: string;
+    phone?: string;
+  } | null;
+};
+
+type TripsResponse = {
+  results: OdooTripSummary[];
+};
+
+type SearchTrip = {
+  id: number;
+  departureTime: string;
+  arrivalTime: string;
+  duration: string;
+  origin: string;
+  destination: string;
+  operator: string;
+  vehicleType: string;
+  price: number;
+  originalPrice?: number;
+  discountLabel?: string;
+  seatsLeft: number;
+  rating: number;
+  reviewCount: number;
+  color: string;
+  badge?: string;
+  endsIn?: string;
+  perks: string[];
+};
+
+function relationName(value: OdooRelation | undefined) {
+  return Array.isArray(value) ? value[1] : 'Chưa cập nhật';
+}
+
+function parseOdooDateTime(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.includes(' ') ? value.replace(' ', 'T') : value;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatTime(value: string | undefined) {
+  const date = parseOdooDateTime(value);
+  if (!date) {
+    return value || '--:--';
+  }
+
+  return date.toLocaleTimeString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatHeaderDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString('vi-VN', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function formatDuration(departureTime: string, arrivalTime?: string, fallbackHours?: number) {
+  const departure = parseOdooDateTime(departureTime);
+  const arrival = parseOdooDateTime(arrivalTime);
+  if (departure && arrival) {
+    const diffMinutes = Math.max(
+      0,
+      Math.round((arrival.getTime() - departure.getTime()) / 60000),
+    );
+    const hours = Math.floor(diffMinutes / 60);
+    const minutes = diffMinutes % 60;
+    return minutes ? `${hours}h ${minutes}p` : `${hours}h`;
+  }
+
+  if (fallbackHours) {
+    const hours = Math.floor(fallbackHours);
+    const minutes = Math.round((fallbackHours - hours) * 60);
+    return minutes ? `${hours}h ${minutes}p` : `${hours}h`;
+  }
+
+  return '--';
+}
+
+function toTripCardModel(trip: OdooTripSummary, index: number): SearchTrip {
+  const vehicleName =
+    trip.vehicle?.license_plate || trip.vehicle?.name || relationName(trip.vehicle_id);
+  const vehicleType =
+    trip.vehicle?.vehicle_type ||
+    trip.vehicle?.seat_layout ||
+    (trip.vehicle?.capacity ? `${trip.vehicle.capacity} chỗ` : 'Xe khách');
+
+  return {
+    id: trip.id,
+    departureTime: formatTime(trip.departure_time),
+    arrivalTime: formatTime(trip.arrival_time),
+    duration: formatDuration(
+      trip.departure_time,
+      trip.arrival_time,
+      trip.route?.duration_hours,
+    ),
+    origin: trip.route?.origin || relationName(trip.route_id),
+    destination: trip.route?.destination || relationName(trip.route_id),
+    operator: vehicleName,
+    vehicleType,
+    price: Number(trip.price || trip.route?.price || 0),
+    seatsLeft: trip.available_seats,
+    rating: 4.8,
+    reviewCount: Math.max(trip.booked_seats || 0, 0),
+    color: ['#5c9f92', '#4d8ea1', '#7b8f76', '#d97a27'][index % 4],
+    perks: ['Xác nhận chỗ ngay lập tức', 'Theo dõi hành trình xe'],
+  };
+}
+
+export function TicketSearchResultsScreen({ route, navigation }: Props) {
   const { showToast } = useToast();
-  const [favoriteIds, setFavoriteIds] = useState(
-    () => new Set(mockTrips.filter(trip => isFavoriteTrip(trip.id)).map(trip => trip.id)),
+  const params = route.params;
+  const [trips, setTrips] = useState<OdooTripSummary[]>([]);
+  const [favoriteIds, setFavoriteIds] = useState(() => new Set<number>());
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const routeTitle = `${params.originName} → ${params.destinationName}`;
+  const headerDate = formatHeaderDate(params.travelDate);
+  const tripCards = useMemo(
+    () => trips.map((trip, index) => toTripCardModel(trip, index)),
+    [trips],
   );
 
-  const favoriteTrip = (trip: MockTrip) => {
-    addFavoriteTrip(trip.id);
+  const loadTrips = useCallback(
+    async (mode: 'initial' | 'refresh' = 'initial') => {
+      if (mode === 'initial') {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
+      setError(null);
+
+      try {
+        const query = new URLSearchParams({
+          route_id: String(params.routeId),
+          date_from: params.travelDate,
+          date_to: params.travelDate,
+          states: 'draft,confirmed',
+          limit: '50',
+        });
+        const data = await requestJson<TripsResponse>(
+          `/api/nhaxe/odoo/trips/?${query.toString()}`,
+          {
+            method: 'GET',
+            auth: true,
+            logLabel: 'customer-trip-results',
+          },
+        );
+        setTrips(data.results || []);
+      } catch (tripError) {
+        const message =
+          tripError instanceof Error
+            ? tripError.message
+            : 'Không tải được danh sách chuyến.';
+        setError(message);
+        showToast({
+          type: 'error',
+          title: 'Không tải được chuyến',
+          message,
+        });
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [params.routeId, params.travelDate, showToast],
+  );
+
+  useEffect(() => {
+    loadTrips('initial');
+  }, [loadTrips]);
+
+  const favoriteTrip = (trip: SearchTrip) => {
     setFavoriteIds(current => new Set(current).add(trip.id));
     showToast({
       type: 'success',
@@ -48,9 +260,11 @@ export function TicketSearchResultsScreen({ navigation }: Props) {
             <Ionicons name="arrow-back" size={24} color={APP_COLORS.surface} />
           </Pressable>
           <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>Hà Nội → Sa Pa</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {routeTitle}
+            </Text>
             <View style={styles.headerDateRow}>
-              <Text style={styles.headerDate}>T4, 17/06/2026</Text>
+              <Text style={styles.headerDate}>{headerDate}</Text>
               <Ionicons name="chevron-down" size={18} color={APP_COLORS.surface} />
             </View>
           </View>
@@ -61,31 +275,88 @@ export function TicketSearchResultsScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.priceCompare}>
-        <PriceMode icon="bus" price="330K" duration="5h 24p" active />
+        <PriceMode
+          icon="bus"
+          price={
+            params.minPrice
+              ? formatTripPrice(params.minPrice)
+              : `${params.tripCount || tripCards.length} chuyến`
+          }
+          duration={params.serviceType || 'coach'}
+          active
+        />
         <View style={styles.transferMode}>
           <View style={styles.discountPill}>
-            <Text style={styles.discountText}>-30k</Text>
+            <Text style={styles.discountText}>
+              {params.tripCount || tripCards.length}
+            </Text>
           </View>
           <Ionicons name="airplane" size={28} color="#111111" />
           <View style={styles.skeletonLine} />
           <View style={[styles.skeletonLine, styles.skeletonLineShort]} />
         </View>
-        <PriceMode icon="train" price="476K" duration="7h 45p" discount="-25%" />
+        <PriceMode
+          icon="train"
+          price={params.maxPrice ? formatTripPrice(params.maxPrice) : 'Odoo'}
+          duration="giá cao nhất"
+          discount="API"
+        />
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
-      >
-        {mockTrips.map((trip, index) => (
-          <TripCard
-            key={trip.id}
-            trip={trip}
-            featured={index === 0}
-            favorite={favoriteIds.has(trip.id)}
-            onFavorite={() => favoriteTrip(trip)}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadTrips('refresh')}
+            tintColor={APP_COLORS.primaryDark}
+            colors={[APP_COLORS.primaryDark, APP_COLORS.info]}
           />
-        ))}
+        }
+      >
+        {loading ? (
+          <View style={styles.stateCard}>
+            <ActivityIndicator size="large" color={APP_COLORS.primaryDark} />
+            <Text style={styles.stateTitle}>Đang tải chuyến đi</Text>
+          </View>
+        ) : null}
+
+        {!loading && error ? (
+          <View style={styles.stateCard}>
+            <Ionicons name="alert-circle-outline" size={34} color={APP_COLORS.danger} />
+            <Text style={styles.stateTitle}>Không tải được danh sách chuyến</Text>
+            <Text style={styles.stateMessage}>{error}</Text>
+            <Pressable
+              style={styles.retryButton}
+              onPress={() => loadTrips('initial')}
+            >
+              <Text style={styles.retryText}>Thử lại</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {!loading && !error && !tripCards.length ? (
+          <View style={styles.stateCard}>
+            <Ionicons name="bus-outline" size={34} color={APP_COLORS.textSecondary} />
+            <Text style={styles.stateTitle}>Chưa có chuyến phù hợp</Text>
+            <Text style={styles.stateMessage}>
+              Bạn thử đổi ngày đi hoặc tuyến đường khác nhé.
+            </Text>
+          </View>
+        ) : null}
+
+        {!loading && !error
+          ? tripCards.map((trip, index) => (
+              <TripCard
+                key={trip.id}
+                trip={trip}
+                featured={index === 0}
+                favorite={favoriteIds.has(trip.id)}
+                onFavorite={() => favoriteTrip(trip)}
+              />
+            ))
+          : null}
       </ScrollView>
 
       <View style={styles.filterBar}>
@@ -144,7 +415,7 @@ function TripCard({
   favorite,
   onFavorite,
 }: {
-  trip: MockTrip;
+  trip: SearchTrip;
   featured?: boolean;
   favorite: boolean;
   onFavorite: () => void;
@@ -396,6 +667,43 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 100,
     backgroundColor: '#f6f7f5',
+  },
+  stateCard: {
+    minHeight: 190,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#dddddd',
+    backgroundColor: APP_COLORS.surface,
+  },
+  stateTitle: {
+    color: APP_COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  stateMessage: {
+    color: APP_COLORS.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 4,
+    minWidth: 104,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: APP_COLORS.primaryDark,
+  },
+  retryText: {
+    color: APP_COLORS.surface,
+    fontSize: 14,
+    fontWeight: '800',
   },
   tripCard: {
     borderRadius: 10,
