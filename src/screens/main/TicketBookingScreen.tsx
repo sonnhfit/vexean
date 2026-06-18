@@ -36,6 +36,9 @@ type OdooTripSummary = {
   departure_time: string;
   arrival_time?: string;
   price: number | string;
+  default_price?: number | string;
+  min_seat_price?: number | string;
+  max_seat_price?: number | string;
   total_seats: number;
   booked_seats: number;
   available_seats: number;
@@ -63,6 +66,9 @@ type OdooSeat = {
   floor: number;
   row: number;
   col: number;
+  effective_price?: number | string;
+  price?: number | string;
+  currency_id?: OdooRelation;
 };
 
 type OdooTripDetail = OdooTripSummary & {
@@ -77,6 +83,13 @@ type TripsResponse = {
   results: OdooTripSummary[];
 };
 
+type SeatsResponse =
+  | OdooSeat[]
+  | {
+      results?: OdooSeat[];
+      seats?: OdooSeat[];
+    };
+
 type OdooBookedTicket = {
   id: number;
   name: string;
@@ -89,6 +102,9 @@ type OdooBookedTicket = {
 type OdooBookedSeat = {
   id: number;
   name: string;
+  price?: number | string;
+  effective_price?: number | string;
+  currency_id?: OdooRelation;
 };
 
 type TicketBookingResponse = {
@@ -190,6 +206,56 @@ function formatMoney(value: number | string | undefined) {
     currency: 'VND',
     maximumFractionDigits: 0,
   });
+}
+
+function normalizeAmount(value: number | string | undefined) {
+  const amount = Number(value || 0);
+  return Number.isNaN(amount) ? 0 : amount;
+}
+
+function formatCompactMoney(value: number | string | undefined) {
+  const amount = normalizeAmount(value);
+  if (amount <= 0) {
+    return 'Theo chuyến';
+  }
+
+  if (amount >= 1000) {
+    return `${Math.round(amount / 1000)}k`;
+  }
+
+  return String(amount);
+}
+
+function getTripDisplayPrice(trip: OdooTripSummary) {
+  const minPrice = normalizeAmount(trip.min_seat_price ?? trip.price);
+  const maxPrice = normalizeAmount(trip.max_seat_price ?? trip.price);
+
+  if (minPrice > 0 && maxPrice > minPrice) {
+    return `${formatMoney(minPrice)} - ${formatMoney(maxPrice)}`;
+  }
+
+  if (minPrice > 0) {
+    return `Từ ${formatMoney(minPrice)}`;
+  }
+
+  return formatMoney(trip.default_price ?? trip.price);
+}
+
+function getSeatPrice(seat: OdooSeat, fallbackTrip?: OdooTripSummary | null) {
+  return normalizeAmount(
+    seat.effective_price ??
+      seat.price ??
+      fallbackTrip?.default_price ??
+      fallbackTrip?.price,
+  );
+}
+
+function normalizeSeatsResponse(data: SeatsResponse) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  return data.results || data.seats || [];
 }
 
 function relationName(value: OdooRelation | undefined) {
@@ -314,21 +380,34 @@ export function TicketBookingScreen({ route, navigation }: Props) {
     [travelDate],
   );
 
+  const fetchTripSeats = useCallback(async (tripId: number) => {
+    const data = await requestJson<SeatsResponse>(
+      `/api/nhaxe/odoo/trips/${tripId}/seats/`,
+      {
+        method: 'GET',
+        auth: true,
+        logLabel: 'odoo-trip-seats',
+      },
+    );
+
+    return normalizeSeatsResponse(data);
+  }, []);
+
   const fetchTripDetail = useCallback(async (trip: OdooTripSummary) => {
     setLoadingDetail(true);
     setDetailError(null);
     setSelectedSeats([]);
 
     try {
-      const data = await requestJson<OdooTripDetail>(
-        `/api/nhaxe/odoo/trips/${trip.id}/`,
-        {
+      const [data, seats] = await Promise.all([
+        requestJson<OdooTripDetail>(`/api/nhaxe/odoo/trips/${trip.id}/`, {
           method: 'GET',
           auth: true,
           logLabel: 'odoo-trip-detail',
-        },
-      );
-      setTripDetail(data);
+        }),
+        fetchTripSeats(trip.id),
+      ]);
+      setTripDetail({ ...data, seats });
     } catch (tripError) {
       const message =
         tripError instanceof Error
@@ -339,35 +418,39 @@ export function TicketBookingScreen({ route, navigation }: Props) {
     } finally {
       setLoadingDetail(false);
     }
-  }, []);
+  }, [fetchTripSeats]);
 
-  const fetchInitialTripDetail = useCallback(async (tripId: number) => {
-    setLoadingDetail(true);
-    setDetailError(null);
-    setSelectedSeats([]);
+  const fetchInitialTripDetail = useCallback(
+    async (tripId: number) => {
+      setLoadingDetail(true);
+      setDetailError(null);
+      setSelectedSeats([]);
 
-    try {
-      const data = await requestJson<OdooTripDetail>(
-        `/api/nhaxe/odoo/trips/${tripId}/`,
-        {
-          method: 'GET',
-          auth: true,
-          logLabel: 'odoo-initial-trip-detail',
-        },
-      );
-      setSelectedTrip(data);
-      setTripDetail(data);
-      setAutoSelectedTripId(tripId);
-    } catch (tripError) {
-      const message =
-        tripError instanceof Error
-          ? tripError.message
-          : 'Không tải được sơ đồ ghế.';
-      setDetailError(message);
-    } finally {
-      setLoadingDetail(false);
-    }
-  }, []);
+      try {
+        const [data, seats] = await Promise.all([
+          requestJson<OdooTripDetail>(`/api/nhaxe/odoo/trips/${tripId}/`, {
+            method: 'GET',
+            auth: true,
+            logLabel: 'odoo-initial-trip-detail',
+          }),
+          fetchTripSeats(tripId),
+        ]);
+        const detail = { ...data, seats };
+        setSelectedTrip(detail);
+        setTripDetail(detail);
+        setAutoSelectedTripId(tripId);
+      } catch (tripError) {
+        const message =
+          tripError instanceof Error
+            ? tripError.message
+            : 'Không tải được sơ đồ ghế.';
+        setDetailError(message);
+      } finally {
+        setLoadingDetail(false);
+      }
+    },
+    [fetchTripSeats],
+  );
 
   useEffect(() => {
     fetchTrips('initial');
@@ -466,6 +549,13 @@ export function TicketBookingScreen({ route, navigation }: Props) {
 
   const selectedTripForSummary = tripDetail || selectedTrip;
   const selectedSeatNames = selectedSeats.map(seat => seat.name).join(', ');
+  const selectedSeatTotal = selectedSeats.reduce(
+    (total, seat) => total + getSeatPrice(seat, selectedTripForSummary),
+    0,
+  );
+  const selectedSeatPriceLines = selectedSeats
+    .map(seat => `${seat.name}: ${formatMoney(getSeatPrice(seat, selectedTripForSummary))}`)
+    .join(' • ');
   const canBook = Boolean(
     selectedTripForSummary && selectedSeats.length > 0 && !booking,
   );
@@ -536,7 +626,10 @@ export function TicketBookingScreen({ route, navigation }: Props) {
             ? bookedTickets
                 .map(ticket => {
                   const seatName = relationName(ticket.seat_id);
-                  return `${ticket.name}${seatName !== 'Chưa cập nhật' ? ` - ghế ${seatName}` : ''}`;
+                  const ticketPrice = ticket.price
+                    ? ` - ${formatMoney(ticket.price)}`
+                    : '';
+                  return `${ticket.name}${seatName !== 'Chưa cập nhật' ? ` - ghế ${seatName}` : ''}${ticketPrice}`;
                 })
                 .join('\n')
             : `Đã đặt ${data.total_tickets || selectedSeats.length} vé.`,
@@ -647,7 +740,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
             >
               <View style={styles.tripTopRow}>
                 <Text style={styles.tripRoute}>{getRouteName(trip)}</Text>
-                <Text style={styles.tripPrice}>{formatMoney(trip.price)}</Text>
+                <Text style={styles.tripPrice}>{getTripDisplayPrice(trip)}</Text>
               </View>
               <View style={styles.tripMetaRow}>
                 <TripMeta
@@ -706,6 +799,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
               key={floor}
               floor={floor}
               seats={seats}
+              trip={selectedTripForSummary}
               selectedSeatIds={selectedSeats.map(seat => seat.id)}
               onSelect={toggleSeat}
             />
@@ -776,12 +870,19 @@ export function TicketBookingScreen({ route, navigation }: Props) {
                 : 'Chưa chọn ghế'}
             </Text>
             <Text style={styles.selectedSubText}>
-              {selectedTripForSummary
-                ? `${getRouteName(selectedTripForSummary)} - ${formatMoney(
-                    selectedTripForSummary.price,
-                  )}`
-                : 'Chọn chuyến để tiếp tục'}
+              {selectedSeats.length > 0
+                ? selectedSeatPriceLines
+                : selectedTripForSummary
+                  ? `${getRouteName(selectedTripForSummary)} - ${getTripDisplayPrice(
+                      selectedTripForSummary,
+                    )}`
+                  : 'Chọn chuyến để tiếp tục'}
             </Text>
+            {selectedSeats.length > 0 ? (
+              <Text style={styles.selectedTotalText}>
+                Tổng tiền: {formatMoney(selectedSeatTotal)}
+              </Text>
+            ) : null}
           </View>
 
           <Pressable
@@ -847,11 +948,13 @@ function TripMeta({ icon, text }: { icon: IconName; text: string }) {
 function SeatFloor({
   floor,
   seats,
+  trip,
   selectedSeatIds,
   onSelect,
 }: {
   floor: number;
   seats: OdooSeat[];
+  trip?: OdooTripSummary | null;
   selectedSeatIds: number[];
   onSelect: (seat: OdooSeat) => void;
 }) {
@@ -903,6 +1006,15 @@ function SeatFloor({
                   numberOfLines={1}
                 >
                   {seat.name}
+                </Text>
+                <Text
+                  style={[
+                    styles.seatPriceText,
+                    { color: selected ? APP_COLORS.surface : meta.color },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {formatCompactMoney(getSeatPrice(seat, trip))}
                 </Text>
               </Pressable>
             );
@@ -1107,17 +1219,18 @@ const styles = StyleSheet.create({
   },
   seatButton: {
     flex: 1,
-    minHeight: 46,
+    minHeight: 58,
     borderWidth: 1,
     borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+    gap: 2,
     paddingHorizontal: 4,
+    paddingVertical: 5,
   },
   seatGap: {
     flex: 1,
-    minHeight: 46,
+    minHeight: 58,
   },
   seatDisabled: {
     opacity: 0.72,
@@ -1128,6 +1241,10 @@ const styles = StyleSheet.create({
   },
   seatText: {
     fontSize: 11,
+    fontWeight: '800',
+  },
+  seatPriceText: {
+    fontSize: 9,
     fontWeight: '800',
   },
   legendRow: {
@@ -1201,6 +1318,12 @@ const styles = StyleSheet.create({
     color: APP_COLORS.textSecondary,
     fontSize: 12,
     fontWeight: '600',
+  },
+  selectedTotalText: {
+    marginTop: 6,
+    color: APP_COLORS.primaryDark,
+    fontSize: 13,
+    fontWeight: '900',
   },
   primaryButton: {
     minHeight: 44,

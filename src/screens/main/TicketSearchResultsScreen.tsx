@@ -489,7 +489,7 @@ function TripCard({
       <View style={styles.operatorRow}>
         <View style={[styles.tripImage, { backgroundColor: trip.color }]}>
           <Ionicons name="bus" size={28} color={APP_COLORS.surface} />
-          <Text style={styles.tripImageText}>vexere</Text>
+          <Text style={styles.tripImageText}>annhien</Text>
         </View>
         <View style={styles.operatorInfo}>
           <Text style={styles.operatorName} numberOfLines={1}>
