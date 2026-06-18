@@ -8,6 +8,9 @@ export type CustomerSearchLocation = {
   slug?: string;
   display_name?: string;
   active?: boolean;
+  latitude?: number;
+  longitude?: number;
+  source?: 'odoo' | 'osm';
 };
 
 export type CustomerLocationPickerMode = 'origin' | 'destination';

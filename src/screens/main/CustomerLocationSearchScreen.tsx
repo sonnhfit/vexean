@@ -29,6 +29,23 @@ type LocationsResponse = {
   results: CustomerSearchLocation[];
 };
 
+type OSMSearchResult = {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+  name?: string;
+  address?: {
+    city?: string;
+    town?: string;
+    village?: string;
+    suburb?: string;
+    county?: string;
+    state?: string;
+    country?: string;
+  };
+};
+
 const popularOriginLocations: LocationPickerItem[] = [
   { id: 10001, name: 'Hà Nội' },
   { id: 10002, name: 'Đà Nẵng', old: true },
@@ -52,6 +69,94 @@ const popularDestinationLocations: LocationPickerItem[] = [
 
 function locationDisplayName(location: CustomerSearchLocation) {
   return location.display_name || location.name;
+}
+
+function compactAddressName(result: OSMSearchResult) {
+  const address = result.address || {};
+  return (
+    result.name ||
+    address.city ||
+    address.town ||
+    address.village ||
+    address.county ||
+    address.state ||
+    result.display_name.split(',')[0]?.trim() ||
+    result.display_name
+  );
+}
+
+function mapOSMResult(result: OSMSearchResult): CustomerSearchLocation {
+  const name = compactAddressName(result);
+  const province = result.address?.state || result.address?.city;
+  const latitude = Number(result.lat);
+  const longitude = Number(result.lon);
+
+  return {
+    id: -result.place_id,
+    name,
+    province,
+    display_name: result.display_name,
+    type: 'address',
+    active: true,
+    latitude: Number.isFinite(latitude) ? latitude : undefined,
+    longitude: Number.isFinite(longitude) ? longitude : undefined,
+    source: 'osm',
+  };
+}
+
+async function searchOdooLocations(query: string) {
+  const params = new URLSearchParams({
+    search: query,
+    limit: '30',
+  });
+  const data = await requestJson<LocationsResponse>(
+    `/api/nhaxe/odoo/locations/?${params.toString()}`,
+    {
+      method: 'GET',
+      logLabel: 'customer-address-location-search',
+    },
+  );
+  return (data.results || []).map(location => ({
+    ...location,
+    source: 'odoo' as const,
+  }));
+}
+
+async function searchOpenStreetMap(query: string) {
+  const params = new URLSearchParams({
+    q: query,
+    format: 'jsonv2',
+    addressdetails: '1',
+    limit: '20',
+    countrycodes: 'vn',
+    'accept-language': 'vi',
+  });
+  const data = await requestJson<OSMSearchResult[]>(
+    `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+    {
+      method: 'GET',
+      headers: {
+        'Accept-Language': 'vi',
+      },
+      logLabel: 'customer-osm-location-search',
+    },
+  );
+  return (Array.isArray(data) ? data : []).map(mapOSMResult);
+}
+
+function mergeLocations(
+  odooLocations: CustomerSearchLocation[],
+  osmLocations: CustomerSearchLocation[],
+) {
+  const seen = new Set<string>();
+  return [...odooLocations, ...osmLocations].filter(location => {
+    const key = locationDisplayName(location).toLowerCase();
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 export function CustomerLocationSearchScreen({ route, navigation }: Props) {
@@ -85,18 +190,24 @@ export function CustomerLocationSearchScreen({ route, navigation }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams({
-          search: trimmedQuery,
-          limit: '30',
-        });
-        const data = await requestJson<LocationsResponse>(
-          `/api/nhaxe/odoo/locations/?${params.toString()}`,
-          {
-            method: 'GET',
-            logLabel: 'customer-address-location-search',
-          },
-        );
-        setResults(data.results || []);
+        const [odooResult, osmResult] = await Promise.allSettled([
+          searchOdooLocations(trimmedQuery),
+          searchOpenStreetMap(trimmedQuery),
+        ]);
+        const odooLocations =
+          odooResult.status === 'fulfilled' ? odooResult.value : [];
+        const osmLocations =
+          osmResult.status === 'fulfilled' ? osmResult.value : [];
+        setResults(mergeLocations(odooLocations, osmLocations));
+
+        if (!odooLocations.length && !osmLocations.length) {
+          setError(null);
+        } else if (
+          odooResult.status === 'rejected' &&
+          osmResult.status === 'rejected'
+        ) {
+          throw odooResult.reason || osmResult.reason;
+        }
       } catch (searchError) {
         const message =
           searchError instanceof Error
@@ -117,7 +228,31 @@ export function CustomerLocationSearchScreen({ route, navigation }: Props) {
   );
 
   const resolveLocation = async (location: CustomerSearchLocation) => {
-    if (location.id < 10000) {
+    if (location.source === 'odoo' || (!location.source && location.id < 10000)) {
+      return location;
+    }
+
+    const searchTerms = [
+      location.name,
+      location.province,
+      location.display_name?.split(',')[0],
+    ].filter(Boolean) as string[];
+
+    for (const searchTerm of searchTerms) {
+      const odooLocations = await searchOdooLocations(searchTerm);
+      const exactMatch = odooLocations.find(
+        item =>
+          item.name.toLowerCase() === location.name.toLowerCase() ||
+          locationDisplayName(item).toLowerCase() ===
+            locationDisplayName(location).toLowerCase(),
+      );
+      const resolvedLocation = exactMatch || odooLocations[0];
+      if (resolvedLocation) {
+        return resolvedLocation;
+      }
+    }
+
+    if (location.source === 'osm') {
       return location;
     }
 
