@@ -1,5 +1,6 @@
 import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -168,6 +169,47 @@ type CustomerRouteSearchResponse = {
   }[];
 };
 
+type TravelDateOption = {
+  value: string;
+  label: string;
+  subtitle: string;
+};
+
+function formatDateValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function createTravelDateOptions(startDate = new Date(), totalDays = 21) {
+  return Array.from({ length: totalDays }, (_, index) => {
+    const date = addDays(startDate, index);
+    const value = formatDateValue(date);
+    const label =
+      index === 0 ? 'Hôm nay' : index === 1 ? 'Ngày mai' : formatTravelDate(value);
+    const subtitle = date.toLocaleDateString('vi-VN', {
+      weekday: 'long',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+
+    return {
+      value,
+      label,
+      subtitle,
+    };
+  });
+}
+
 function formatTravelDate(value: string | null | undefined) {
   if (!value) {
     return 'Ngày đi';
@@ -204,6 +246,7 @@ export function CustomerHomeScreen() {
   const [roundTrip, setRoundTrip] = useState(false);
   const [routeSwapped, setRouteSwapped] = useState(false);
   const [selectedServiceType, setSelectedServiceType] = useState('coach');
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -444,6 +487,7 @@ export function CustomerHomeScreen() {
           APP_COLORS.primaryDark,
       }))
     : popularRoutes;
+  const travelDateOptions = useMemo(() => createTravelDateOptions(), []);
 
   const canClearRecentSearches = Boolean(recentSearches.length);
   const fallbackOrigin = routeSwapped ? 'Bà Rịa-Vũng Tàu' : 'Hồ Chí Minh';
@@ -452,6 +496,8 @@ export function CustomerHomeScreen() {
   const selectedDestination =
     activeSearch?.destination?.name || fallbackDestination;
   const selectedTravelDate = formatTravelDate(activeSearch?.travel_date);
+  const selectedTravelDateValue =
+    activeSearch?.travel_date || travelDateOptions[0]?.value || formatDateValue(new Date());
   const refreshLabel = useMemo(() => {
     if (loading) {
       return 'Đang tải dữ liệu...';
@@ -472,6 +518,32 @@ export function CustomerHomeScreen() {
     if (recentSearch.service_type) {
       setSelectedServiceType(recentSearch.service_type);
     }
+  };
+
+  const selectTravelDate = (travelDate: string) => {
+    setSelectedSearch(current => {
+      const baseSearch =
+        current ||
+        homeData?.default_search || {
+          origin: null,
+          destination: null,
+          travel_date: travelDate,
+          round_trip: false,
+          return_date: null,
+        };
+      const nextReturnDate =
+        baseSearch.return_date && baseSearch.return_date < travelDate
+          ? null
+          : baseSearch.return_date;
+
+      return {
+        ...baseSearch,
+        travel_date: travelDate,
+        return_date: nextReturnDate,
+        round_trip: roundTrip,
+      };
+    });
+    setDatePickerVisible(false);
   };
 
   return (
@@ -564,10 +636,16 @@ export function CustomerHomeScreen() {
           </View>
 
           <View style={styles.dateRow}>
-            <View style={styles.dateField}>
+            <Pressable
+              style={styles.dateField}
+              onPress={() => setDatePickerVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Chọn ngày đi"
+              hitSlop={8}
+            >
               <Ionicons name="calendar-outline" size={22} color={APP_COLORS.primaryDark} />
               <Text style={styles.dateLabel}>{selectedTravelDate}</Text>
-            </View>
+            </Pressable>
             <View style={styles.roundTripWrap}>
               <Text style={styles.roundTripText}>Khứ hồi</Text>
               <Pressable
@@ -659,6 +737,13 @@ export function CustomerHomeScreen() {
           ))}
         </ScrollView>
       </ScrollView>
+      <TravelDatePickerModal
+        visible={datePickerVisible}
+        selectedValue={selectedTravelDateValue}
+        options={travelDateOptions}
+        onClose={() => setDatePickerVisible(false)}
+        onSelect={selectTravelDate}
+      />
     </SafeAreaView>
   );
 }
@@ -724,6 +809,100 @@ function Benefit({ icon, text }: { icon: IconName; text: string }) {
       <Ionicons name={icon} size={18} color="#2fac6a" />
       <Text style={styles.benefitText}>{text}</Text>
     </View>
+  );
+}
+
+function TravelDatePickerModal({
+  visible,
+  selectedValue,
+  options,
+  onClose,
+  onSelect,
+}: {
+  visible: boolean;
+  selectedValue: string;
+  options: TravelDateOption[];
+  onClose: () => void;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.dateModalBackdrop} onPress={onClose}>
+        <Pressable style={styles.datePickerCard}>
+          <View style={styles.datePickerHeader}>
+            <View>
+              <Text style={styles.datePickerTitle}>Chọn ngày đi</Text>
+              <Text style={styles.datePickerSubtitle}>
+                Ngày này sẽ dùng để tìm chuyến phù hợp
+              </Text>
+            </View>
+            <Pressable
+              style={styles.datePickerCloseButton}
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Đóng chọn ngày đi"
+            >
+              <Ionicons name="close" size={22} color="#111111" />
+            </Pressable>
+          </View>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.dateOptionList}
+          >
+            {options.map(option => {
+              const active = option.value === selectedValue;
+              return (
+                <Pressable
+                  key={option.value}
+                  style={[styles.dateOption, active && styles.dateOptionActive]}
+                  onPress={() => onSelect(option.value)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Chọn ${option.subtitle}`}
+                >
+                  <View style={styles.dateOptionIcon}>
+                    <Ionicons
+                      name="calendar-outline"
+                      size={20}
+                      color={active ? APP_COLORS.surface : APP_COLORS.primaryDark}
+                    />
+                  </View>
+                  <View style={styles.dateOptionTextWrap}>
+                    <Text
+                      style={[
+                        styles.dateOptionLabel,
+                        active && styles.dateOptionLabelActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.dateOptionSubtitle,
+                        active && styles.dateOptionSubtitleActive,
+                      ]}
+                    >
+                      {option.subtitle}
+                    </Text>
+                  </View>
+                  {active ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={22}
+                      color={APP_COLORS.surface}
+                    />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -913,6 +1092,7 @@ const styles = StyleSheet.create({
   },
   dateField: {
     flex: 1,
+    minHeight: 60,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 18,
@@ -929,6 +1109,97 @@ const styles = StyleSheet.create({
     color: '#111111',
     fontSize: 14,
     fontWeight: '500',
+  },
+  dateModalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.38)',
+  },
+  datePickerCard: {
+    maxHeight: '76%',
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
+    backgroundColor: '#f6f7f5',
+    overflow: 'hidden',
+  },
+  datePickerHeader: {
+    minHeight: 78,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    paddingHorizontal: 18,
+    backgroundColor: APP_COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e5e5',
+  },
+  datePickerTitle: {
+    color: '#111111',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  datePickerSubtitle: {
+    marginTop: 4,
+    color: '#7a7a7a',
+    fontSize: 13,
+  },
+  datePickerCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#efefef',
+  },
+  dateOptionList: {
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    gap: 10,
+  },
+  dateOption: {
+    minHeight: 68,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: APP_COLORS.surface,
+    borderWidth: 1,
+    borderColor: '#e1e1e1',
+  },
+  dateOptionActive: {
+    backgroundColor: APP_COLORS.primaryDark,
+    borderColor: APP_COLORS.primaryDark,
+  },
+  dateOptionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  dateOptionTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  dateOptionLabel: {
+    color: '#111111',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  dateOptionLabelActive: {
+    color: APP_COLORS.surface,
+  },
+  dateOptionSubtitle: {
+    marginTop: 3,
+    color: '#7a7a7a',
+    fontSize: 13,
+    textTransform: 'capitalize',
+  },
+  dateOptionSubtitleActive: {
+    color: '#eaf4f2',
   },
   switch: {
     width: 50,
