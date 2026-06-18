@@ -18,6 +18,11 @@ import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useToast } from '../../components/Toast';
+import {
+  clearCustomerRecentSearches,
+  CustomerRecentSearch,
+  fetchCustomerRecentSearches,
+} from '../../services/customerRecentSearches';
 import { requestJson } from '../../services/apiClient';
 import { useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
@@ -33,21 +38,6 @@ type CustomerHomeNavigation = CompositeNavigationProp<
   NativeStackNavigationProp<RootStackParamList>
 >;
 type CustomerHomeRoute = RouteProp<MainTabParamList, 'CustomerHome'>;
-
-const recentSearches = [
-  {
-    id: 'fallback-1',
-    from: 'Hồ Chí Minh',
-    to: 'Bà Rịa-Vũng Tàu',
-    date: '19/09/2025',
-  },
-  {
-    id: 'fallback-2',
-    from: 'Hồ Chí Minh',
-    to: 'Bà Rịa-Vũng Tàu',
-    date: '20/09/2025',
-  },
-];
 
 const popularRoutes = [
   { id: 'fallback-sapa', title: 'Sapa', color: '#5c9f92' },
@@ -209,6 +199,7 @@ export function CustomerHomeScreen() {
   const { showToast } = useToast();
   const user = useAppSelector(state => state.auth.user);
   const [homeData, setHomeData] = useState<CustomerHomeResponse | null>(null);
+  const [recentSearches, setRecentSearches] = useState<CustomerRecentSearch[]>([]);
   const [selectedSearch, setSelectedSearch] = useState<CustomerHomeSearch | null>(null);
   const [roundTrip, setRoundTrip] = useState(false);
   const [routeSwapped, setRouteSwapped] = useState(false);
@@ -251,6 +242,13 @@ export function CustomerHomeScreen() {
           'coach'
         );
       });
+
+      try {
+        const recentData = await fetchCustomerRecentSearches(10);
+        setRecentSearches(recentData);
+      } catch {
+        setRecentSearches(data.recent_searches || []);
+      }
     } catch (homeError) {
       const message =
         homeError instanceof Error
@@ -306,11 +304,8 @@ export function CustomerHomeScreen() {
 
   const clearRecentSearches = async () => {
     try {
-      await requestJson('/api/nhaxe/customer/recent-searches/', {
-        method: 'DELETE',
-        auth: true,
-        logLabel: 'customer-clear-recent-searches',
-      });
+      await clearCustomerRecentSearches();
+      setRecentSearches([]);
       setHomeData(current =>
         current ? { ...current, recent_searches: [] } : current,
       );
@@ -324,30 +319,6 @@ export function CustomerHomeScreen() {
         title: 'Không xóa được lịch sử',
         message,
       });
-    }
-  };
-
-  const saveRecentSearch = async (search: CustomerHomeSearch) => {
-    if (!search.origin?.id || !search.destination?.id) {
-      return;
-    }
-
-    try {
-      await requestJson('/api/nhaxe/customer/recent-searches/', {
-        method: 'POST',
-        auth: true,
-        body: {
-          origin_id: search.origin.id,
-          destination_id: search.destination.id,
-          travel_date: search.travel_date,
-          return_date: search.return_date,
-          round_trip: roundTrip,
-          service_type: selectedServiceType,
-        },
-        logLabel: 'customer-save-recent-search',
-      });
-    } catch {
-      // Recent search is nice-to-have; do not block booking search on it.
     }
   };
 
@@ -372,6 +343,7 @@ export function CustomerHomeScreen() {
       `/api/nhaxe/odoo/route-search/?${params.toString()}`,
       {
         method: 'GET',
+        auth: true,
         logLabel: 'customer-route-search',
       },
     );
@@ -408,7 +380,6 @@ export function CustomerHomeScreen() {
         return;
       }
 
-      await saveRecentSearch(activeSearch);
       navigation.navigate('TicketSearchResults', {
         routeId: selectedRoute.id,
         originName: activeSearch.origin?.name || selectedRoute.origin.name,
@@ -422,6 +393,9 @@ export function CustomerHomeScreen() {
         minPrice: routeSearch.summary.min_price,
         maxPrice: routeSearch.summary.max_price,
       });
+      fetchCustomerRecentSearches(10)
+        .then(setRecentSearches)
+        .catch(() => undefined);
     } catch (searchError) {
       const message =
         searchError instanceof Error
@@ -448,14 +422,15 @@ export function CustomerHomeScreen() {
     ? homeData.service_types
     : defaultServices;
   const benefits = homeData?.benefits.length ? homeData.benefits : defaultBenefits;
-  const renderedRecentSearches = homeData?.recent_searches.length
-    ? homeData.recent_searches.map(item => ({
+  const renderedRecentSearches = recentSearches.length
+    ? recentSearches.map(item => ({
+        raw: item,
         id: String(item.id),
         from: item.origin.name,
         to: item.destination.name,
         date: formatTravelDate(item.travel_date),
       }))
-    : recentSearches;
+    : [];
   const renderedPopularRoutes = homeData?.popular_routes.length
     ? homeData.popular_routes.map((popularRoute, index) => ({
         id: String(popularRoute.id),
@@ -470,7 +445,7 @@ export function CustomerHomeScreen() {
       }))
     : popularRoutes;
 
-  const canClearRecentSearches = Boolean(homeData?.recent_searches.length);
+  const canClearRecentSearches = Boolean(recentSearches.length);
   const fallbackOrigin = routeSwapped ? 'Bà Rịa-Vũng Tàu' : 'Hồ Chí Minh';
   const fallbackDestination = routeSwapped ? 'Hồ Chí Minh' : 'Bà Rịa-Vũng Tàu';
   const selectedOrigin = activeSearch?.origin?.name || fallbackOrigin;
@@ -483,6 +458,21 @@ export function CustomerHomeScreen() {
     }
     return error;
   }, [error, loading]);
+
+  const selectRecentSearch = (recentSearch: CustomerRecentSearch) => {
+    setSelectedSearch({
+      origin: recentSearch.origin,
+      destination: recentSearch.destination,
+      travel_date: recentSearch.travel_date,
+      return_date: recentSearch.return_date,
+      round_trip: recentSearch.round_trip,
+    });
+    setRoundTrip(recentSearch.round_trip);
+    setRouteSwapped(false);
+    if (recentSearch.service_type) {
+      setSelectedServiceType(recentSearch.service_type);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -627,7 +617,13 @@ export function CustomerHomeScreen() {
           contentContainerStyle={styles.recentList}
         >
           {renderedRecentSearches.map(item => (
-            <View key={item.id} style={styles.recentCard}>
+            <Pressable
+              key={item.id}
+              style={styles.recentCard}
+              onPress={() => selectRecentSearch(item.raw)}
+              accessibilityRole="button"
+              accessibilityLabel={`Chọn lại ${item.from} đến ${item.to}`}
+            >
               <View style={styles.recentRoute}>
                 <View style={styles.smallDots}>
                   <View style={styles.smallDotBlue} />
@@ -640,7 +636,7 @@ export function CustomerHomeScreen() {
                 </View>
               </View>
               <Ionicons name="arrow-forward" size={22} color="#111111" />
-            </View>
+            </Pressable>
           ))}
         </ScrollView>
 

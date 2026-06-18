@@ -11,6 +11,10 @@ import Ionicons from '@react-native-vector-icons/ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
+import {
+  CustomerRecentSearch,
+  fetchCustomerRecentSearches,
+} from '../../services/customerRecentSearches';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
 import {
@@ -159,6 +163,22 @@ function mergeLocations(
   });
 }
 
+function recentSearchesToLocations(
+  recentSearches: CustomerRecentSearch[],
+  mode: 'origin' | 'destination',
+) {
+  const seen = new Set<number>();
+  return recentSearches
+    .map(item => (mode === 'origin' ? item.origin : item.destination))
+    .filter(location => {
+      if (!location?.id || seen.has(location.id)) {
+        return false;
+      }
+      seen.add(location.id);
+      return true;
+    });
+}
+
 export function CustomerLocationSearchScreen({ route, navigation }: Props) {
   const { mode, currentLocation } = route.params;
   const isOrigin = mode === 'origin';
@@ -171,12 +191,23 @@ export function CustomerLocationSearchScreen({ route, navigation }: Props) {
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<CustomerSearchLocation[]>([]);
+  const [recentSearches, setRecentSearches] = useState<CustomerRecentSearch[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectingId, setSelectingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const trimmedQuery = query.trim();
+  const recentLocations = useMemo(
+    () => recentSearchesToLocations(recentSearches, mode),
+    [mode, recentSearches],
+  );
   const renderedLocations = trimmedQuery ? results : popularLocations;
+
+  useEffect(() => {
+    fetchCustomerRecentSearches(10)
+      .then(setRecentSearches)
+      .catch(() => setRecentSearches([]));
+  }, []);
 
   useEffect(() => {
     if (!trimmedQuery) {
@@ -350,7 +381,7 @@ export function CustomerLocationSearchScreen({ route, navigation }: Props) {
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.sectionTitle}>
-          {trimmedQuery ? 'Kết quả tìm kiếm' : 'Địa danh phổ biến'}
+          {trimmedQuery ? 'Kết quả tìm kiếm' : 'Tìm kiếm gần đây'}
         </Text>
 
         {loading ? (
@@ -366,10 +397,32 @@ export function CustomerLocationSearchScreen({ route, navigation }: Props) {
           <Text style={styles.stateText}>Không có địa điểm phù hợp.</Text>
         ) : null}
 
+        {!loading && !trimmedQuery && recentLocations.length
+          ? recentLocations.map(location => (
+              <LocationRow
+                key={`recent-${location.id}-${location.name}`}
+                location={location}
+                selected={locationDisplayName(location) === currentLabel}
+                selecting={selectingId === location.id}
+                onPress={() => selectLocation(location)}
+              />
+            ))
+          : null}
+
+        {!loading && !trimmedQuery && !recentLocations.length ? (
+          <Text style={styles.stateText}>Chưa có lịch sử tìm kiếm.</Text>
+        ) : null}
+
+        {!trimmedQuery ? (
+          <Text style={[styles.sectionTitle, styles.popularSectionTitle]}>
+            Địa danh phổ biến
+          </Text>
+        ) : null}
+
         {!loading
           ? renderedLocations.map(location => (
               <LocationRow
-                key={`${location.id}-${location.name}`}
+                key={`${trimmedQuery ? 'result' : 'popular'}-${location.id}-${location.name}`}
                 location={location}
                 selected={locationDisplayName(location) === currentLabel}
                 selecting={selectingId === location.id}
@@ -518,6 +571,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 22,
     paddingBottom: 10,
+  },
+  popularSectionTitle: {
+    paddingTop: 16,
   },
   stateRow: {
     flexDirection: 'row',
