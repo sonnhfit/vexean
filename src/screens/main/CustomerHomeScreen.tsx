@@ -189,12 +189,28 @@ function addDays(date: Date, days: number) {
   return nextDate;
 }
 
-function createTravelDateOptions(startDate = new Date(), totalDays = 21) {
-  return Array.from({ length: totalDays }, (_, index) => {
+type CalendarDateCell = {
+  value: string;
+  day: number;
+  inCurrentMonth: boolean;
+  disabled: boolean;
+};
+
+function parseDateValue(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function createTravelDateOptions(startDate = new Date()) {
+  const quickLabels = ['Hôm nay', 'Ngày mai', 'Ngày kia'];
+
+  return quickLabels.map((label, index) => {
     const date = addDays(startDate, index);
     const value = formatDateValue(date);
-    const label =
-      index === 0 ? 'Hôm nay' : index === 1 ? 'Ngày mai' : formatTravelDate(value);
     const subtitle = date.toLocaleDateString('vi-VN', {
       weekday: 'long',
       day: '2-digit',
@@ -207,6 +223,39 @@ function createTravelDateOptions(startDate = new Date(), totalDays = 21) {
       label,
       subtitle,
     };
+  });
+}
+
+function createCalendarDateCells(monthDate: Date): CalendarDateCell[] {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const firstDate = new Date(year, month, 1);
+  const mondayOffset = (firstDate.getDay() + 6) % 7;
+  const gridStart = addDays(firstDate, -mondayOffset);
+  const todayValue = formatDateValue(new Date());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = addDays(gridStart, index);
+    const value = formatDateValue(date);
+
+    return {
+      value,
+      day: date.getDate(),
+      inCurrentMonth: date.getMonth() === month,
+      disabled: value < todayValue,
+    };
+  });
+}
+
+function createMonthDate(value: string) {
+  const selectedDate = parseDateValue(value) || new Date();
+  return new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+}
+
+function createMonthLabel(date: Date) {
+  return date.toLocaleDateString('vi-VN', {
+    month: 'long',
+    year: 'numeric',
   });
 }
 
@@ -825,6 +874,41 @@ function TravelDatePickerModal({
   onClose: () => void;
   onSelect: (value: string) => void;
 }) {
+  const [visibleMonth, setVisibleMonth] = useState(() =>
+    createMonthDate(selectedValue),
+  );
+  const monthCells = useMemo(
+    () => createCalendarDateCells(visibleMonth),
+    [visibleMonth],
+  );
+  const todayMonth = createMonthDate(formatDateValue(new Date()));
+  const canGoPreviousMonth =
+    visibleMonth.getFullYear() > todayMonth.getFullYear() ||
+    (visibleMonth.getFullYear() === todayMonth.getFullYear() &&
+      visibleMonth.getMonth() > todayMonth.getMonth());
+
+  useEffect(() => {
+    if (visible) {
+      setVisibleMonth(createMonthDate(selectedValue));
+    }
+  }, [selectedValue, visible]);
+
+  const changeMonth = (direction: -1 | 1) => {
+    setVisibleMonth(current => {
+      const nextMonth = new Date(
+        current.getFullYear(),
+        current.getMonth() + direction,
+        1,
+      );
+
+      if (direction < 0 && nextMonth < todayMonth) {
+        return current;
+      }
+
+      return nextMonth;
+    });
+  };
+
   return (
     <Modal
       visible={visible}
@@ -838,7 +922,7 @@ function TravelDatePickerModal({
             <View>
               <Text style={styles.datePickerTitle}>Chọn ngày đi</Text>
               <Text style={styles.datePickerSubtitle}>
-                Ngày này sẽ dùng để tìm chuyến phù hợp
+                Chọn nhanh hoặc mở lịch để chọn ngày bất kỳ
               </Text>
             </View>
             <Pressable
@@ -854,51 +938,129 @@ function TravelDatePickerModal({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.dateOptionList}
           >
-            {options.map(option => {
-              const active = option.value === selectedValue;
-              return (
-                <Pressable
-                  key={option.value}
-                  style={[styles.dateOption, active && styles.dateOptionActive]}
-                  onPress={() => onSelect(option.value)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Chọn ${option.subtitle}`}
-                >
-                  <View style={styles.dateOptionIcon}>
-                    <Ionicons
-                      name="calendar-outline"
-                      size={20}
-                      color={active ? APP_COLORS.surface : APP_COLORS.primaryDark}
-                    />
-                  </View>
-                  <View style={styles.dateOptionTextWrap}>
+            <View style={styles.quickDateRow}>
+              {options.map(option => {
+                const active = option.value === selectedValue;
+                return (
+                  <Pressable
+                    key={option.value}
+                    style={[
+                      styles.quickDateButton,
+                      active && styles.quickDateButtonActive,
+                    ]}
+                    onPress={() => onSelect(option.value)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Chọn ${option.subtitle}`}
+                  >
                     <Text
                       style={[
-                        styles.dateOptionLabel,
-                        active && styles.dateOptionLabelActive,
+                        styles.quickDateLabel,
+                        active && styles.quickDateLabelActive,
                       ]}
                     >
                       {option.label}
                     </Text>
                     <Text
                       style={[
-                        styles.dateOptionSubtitle,
-                        active && styles.dateOptionSubtitleActive,
+                        styles.quickDateSubtitle,
+                        active && styles.quickDateSubtitleActive,
                       ]}
                     >
-                      {option.subtitle}
+                      {formatTravelDate(option.value)}
                     </Text>
-                  </View>
-                  {active ? (
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={styles.calendarCard}>
+              <View style={styles.calendarCardHeader}>
+                <View style={styles.calendarTitleRow}>
+                  <View style={styles.calendarTitleIcon}>
                     <Ionicons
-                      name="checkmark-circle"
-                      size={22}
-                      color={APP_COLORS.surface}
+                      name="calendar-number-outline"
+                      size={20}
+                      color={APP_COLORS.primaryDark}
                     />
-                  ) : null}
-                </Pressable>
-              );
-            })}
+                  </View>
+                  <Text style={styles.calendarTitle}>Chọn trên lịch</Text>
+                </View>
+                <View style={styles.calendarMonthControls}>
+                  <Pressable
+                    style={[
+                      styles.calendarNavButton,
+                      !canGoPreviousMonth && styles.calendarNavButtonDisabled,
+                    ]}
+                    onPress={() => changeMonth(-1)}
+                    disabled={!canGoPreviousMonth}
+                    accessibilityRole="button"
+                    accessibilityLabel="Tháng trước"
+                  >
+                    <Ionicons
+                      name="chevron-back"
+                      size={20}
+                      color={canGoPreviousMonth ? '#111111' : '#b8b8b8'}
+                    />
+                  </Pressable>
+                  <Text style={styles.calendarMonthText}>
+                    {createMonthLabel(visibleMonth)}
+                  </Text>
+                  <Pressable
+                    style={styles.calendarNavButton}
+                    onPress={() => changeMonth(1)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Tháng sau"
+                  >
+                    <Ionicons name="chevron-forward" size={20} color="#111111" />
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={styles.calendarWeekRow}>
+                {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(day => (
+                  <Text key={day} style={styles.calendarWeekText}>
+                    {day}
+                  </Text>
+                ))}
+              </View>
+
+              <View style={styles.calendarGrid}>
+                {monthCells.map(cell => {
+                  const active = cell.value === selectedValue;
+                  return (
+                    <Pressable
+                      key={cell.value}
+                      style={[
+                        styles.calendarDay,
+                        cell.disabled && styles.calendarDayDisabled,
+                      ]}
+                      onPress={() => onSelect(cell.value)}
+                      disabled={cell.disabled}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Chọn ngày ${formatTravelDate(cell.value)}`}
+                    >
+                      <View
+                        style={[
+                          styles.calendarDayInner,
+                          active && styles.calendarDayInnerActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.calendarDayText,
+                            !cell.inCurrentMonth && styles.calendarDayOutsideText,
+                            cell.disabled && styles.calendarDayDisabledText,
+                            active && styles.calendarDayTextActive,
+                          ]}
+                        >
+                          {cell.day}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
           </ScrollView>
         </Pressable>
       </Pressable>
@@ -1155,6 +1317,145 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 14,
     gap: 10,
+  },
+  quickDateRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  quickDateButton: {
+    flex: 1,
+    minHeight: 64,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    justifyContent: 'center',
+    backgroundColor: APP_COLORS.surface,
+    borderWidth: 1,
+    borderColor: '#e1e1e1',
+  },
+  quickDateButtonActive: {
+    backgroundColor: APP_COLORS.primaryDark,
+    borderColor: APP_COLORS.primaryDark,
+  },
+  quickDateLabel: {
+    color: '#111111',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  quickDateLabelActive: {
+    color: APP_COLORS.surface,
+  },
+  quickDateSubtitle: {
+    marginTop: 4,
+    color: '#7a7a7a',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  quickDateSubtitleActive: {
+    color: '#eaf4f2',
+  },
+  calendarCard: {
+    borderRadius: 8,
+    padding: 14,
+    backgroundColor: APP_COLORS.surface,
+    borderWidth: 1,
+    borderColor: '#e1e1e1',
+  },
+  calendarCardHeader: {
+    gap: 12,
+  },
+  calendarTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  calendarTitleIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef8f6',
+  },
+  calendarTitle: {
+    color: '#111111',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  calendarMonthControls: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    backgroundColor: '#f6f7f5',
+  },
+  calendarNavButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarNavButtonDisabled: {
+    opacity: 0.55,
+  },
+  calendarMonthText: {
+    color: '#111111',
+    fontSize: 15,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  calendarWeekRow: {
+    flexDirection: 'row',
+    marginTop: 14,
+  },
+  calendarWeekText: {
+    width: `${100 / 7}%`,
+    color: '#7a7a7a',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+  },
+  calendarDay: {
+    width: `${100 / 7}%`,
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDayDisabled: {
+    opacity: 0.45,
+  },
+  calendarDayInner: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDayInnerActive: {
+    backgroundColor: APP_COLORS.primaryDark,
+  },
+  calendarDayText: {
+    color: '#111111',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  calendarDayOutsideText: {
+    color: '#b0b0b0',
+  },
+  calendarDayDisabledText: {
+    color: '#a5a5a5',
+  },
+  calendarDayTextActive: {
+    color: APP_COLORS.surface,
   },
   dateOption: {
     minHeight: 68,
