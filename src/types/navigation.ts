@@ -1,5 +1,22 @@
 import { NavigatorScreenParams } from '@react-navigation/native';
 
+export type CustomerSearchLocation = {
+  id: number;
+  name: string;
+  province?: string;
+  type?: string;
+  slug?: string;
+  display_name?: string;
+  active?: boolean;
+};
+
+export type CustomerLocationPickerMode = 'origin' | 'destination';
+
+export type CustomerLocationSelection = {
+  mode: CustomerLocationPickerMode;
+  location: CustomerSearchLocation;
+};
+
 export type RootStackParamList = {
   Login: undefined;
   MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
@@ -35,11 +52,20 @@ export type RootStackParamList = {
     minPrice?: number | null;
     maxPrice?: number | null;
   };
+  CustomerLocationSearch: {
+    mode: CustomerLocationPickerMode;
+    currentLocation?: CustomerSearchLocation | null;
+  };
 };
 
 export type MainTabParamList = {
   Dashboard: undefined;
-  CustomerHome: undefined;
+  CustomerHome:
+    | {
+        selectedLocation?: CustomerLocationSelection;
+        selectionKey?: number;
+      }
+    | undefined;
   CustomerTicket:
     | {
         initialPhone?: string;

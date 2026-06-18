@@ -4,6 +4,7 @@ import { AccountDetailScreen } from '../screens/account/AccountDetailScreen';
 import { EditProfileScreen } from '../screens/account/EditProfileScreen';
 import { ProfileScreen } from '../screens/account/ProfileScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
+import { CustomerLocationSearchScreen } from '../screens/main/CustomerLocationSearchScreen';
 import { TicketBookingScreen } from '../screens/main/TicketBookingScreen';
 import { TicketSearchResultsScreen } from '../screens/main/TicketSearchResultsScreen';
 import { VehicleDetailScreen } from '../screens/main/VehicleDetailScreen';
@@ -70,6 +71,11 @@ export function RootNavigator() {
           <Stack.Screen
             name="TicketSearchResults"
             component={TicketSearchResultsScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="CustomerLocationSearch"
+            component={CustomerLocationSearchScreen}
             options={{ headerShown: false }}
           />
         </>

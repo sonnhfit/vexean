@@ -8,7 +8,12 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
-import { CompositeNavigationProp, useNavigation } from '@react-navigation/native';
+import {
+  CompositeNavigationProp,
+  RouteProp,
+  useNavigation,
+  useRoute,
+} from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,13 +21,18 @@ import { useToast } from '../../components/Toast';
 import { requestJson } from '../../services/apiClient';
 import { useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
-import { MainTabParamList, RootStackParamList } from '../../types/navigation';
+import {
+  CustomerLocationPickerMode,
+  MainTabParamList,
+  RootStackParamList,
+} from '../../types/navigation';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 type CustomerHomeNavigation = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'CustomerHome'>,
   NativeStackNavigationProp<RootStackParamList>
 >;
+type CustomerHomeRoute = RouteProp<MainTabParamList, 'CustomerHome'>;
 
 const recentSearches = [
   {
@@ -195,9 +205,11 @@ function swapSearchRoute(search: CustomerHomeSearch): CustomerHomeSearch {
 
 export function CustomerHomeScreen() {
   const navigation = useNavigation<CustomerHomeNavigation>();
+  const route = useRoute<CustomerHomeRoute>();
   const { showToast } = useToast();
   const user = useAppSelector(state => state.auth.user);
   const [homeData, setHomeData] = useState<CustomerHomeResponse | null>(null);
+  const [selectedSearch, setSelectedSearch] = useState<CustomerHomeSearch | null>(null);
   const [roundTrip, setRoundTrip] = useState(false);
   const [routeSwapped, setRouteSwapped] = useState(false);
   const [selectedServiceType, setSelectedServiceType] = useState('coach');
@@ -225,6 +237,7 @@ export function CustomerHomeScreen() {
       );
 
       setHomeData(data);
+      setSelectedSearch(data.default_search);
       setRoundTrip(data.default_search.round_trip);
       setRouteSwapped(false);
       setSelectedServiceType(current => {
@@ -257,6 +270,39 @@ export function CustomerHomeScreen() {
   const onRefresh = useCallback(() => {
     loadHome('refresh');
   }, [loadHome]);
+
+  useEffect(() => {
+    const selectedLocation = route.params?.selectedLocation;
+    if (!selectedLocation) {
+      return;
+    }
+
+    setSelectedSearch(current => {
+      const baseSearch =
+        current ||
+        homeData?.default_search || {
+          origin: null,
+          destination: null,
+          travel_date: new Date().toISOString().slice(0, 10),
+          round_trip: false,
+          return_date: null,
+        };
+
+      return {
+        ...baseSearch,
+        origin:
+          selectedLocation.mode === 'origin'
+            ? selectedLocation.location
+            : baseSearch.origin,
+        destination:
+          selectedLocation.mode === 'destination'
+            ? selectedLocation.location
+            : baseSearch.destination,
+        round_trip: roundTrip,
+      };
+    });
+    setRouteSwapped(false);
+  }, [homeData?.default_search, route.params?.selectionKey, route.params?.selectedLocation, roundTrip]);
 
   const clearRecentSearches = async () => {
     try {
@@ -331,6 +377,14 @@ export function CustomerHomeScreen() {
     );
   };
 
+  const openLocationPicker = (mode: CustomerLocationPickerMode) => {
+    navigation.navigate('CustomerLocationSearch', {
+      mode,
+      currentLocation:
+        mode === 'origin' ? activeSearch?.origin : activeSearch?.destination,
+    });
+  };
+
   const handleSearch = async () => {
     if (!activeSearch) {
       showToast({
@@ -383,14 +437,13 @@ export function CustomerHomeScreen() {
     }
   };
 
-  const defaultSearch = homeData?.default_search;
   const activeSearch = useMemo(() => {
-    if (!defaultSearch) {
+    if (!selectedSearch) {
       return null;
     }
 
-    return routeSwapped ? swapSearchRoute(defaultSearch) : defaultSearch;
-  }, [defaultSearch, routeSwapped]);
+    return routeSwapped ? swapSearchRoute(selectedSearch) : selectedSearch;
+  }, [selectedSearch, routeSwapped]);
   const services = homeData?.service_types.length
     ? homeData.service_types
     : defaultServices;
@@ -404,11 +457,14 @@ export function CustomerHomeScreen() {
       }))
     : recentSearches;
   const renderedPopularRoutes = homeData?.popular_routes.length
-    ? homeData.popular_routes.map((route, index) => ({
-        id: String(route.id),
-        title: route.title || route.destination?.name || 'Tuyến phổ biến',
+    ? homeData.popular_routes.map((popularRoute, index) => ({
+        id: String(popularRoute.id),
+        title:
+          popularRoute.title ||
+          popularRoute.destination?.name ||
+          'Tuyến phổ biến',
         color:
-          route.color ||
+          popularRoute.color ||
           popularRoutes[index % popularRoutes.length]?.color ||
           APP_COLORS.primaryDark,
       }))
@@ -495,9 +551,17 @@ export function CustomerHomeScreen() {
               <View style={styles.dotRed} />
             </View>
             <View style={styles.routeFields}>
-              <RouteField label="Nơi xuất phát" value={selectedOrigin} />
+              <RouteField
+                label="Nơi xuất phát"
+                value={selectedOrigin}
+                onPress={() => openLocationPicker('origin')}
+              />
               <View style={styles.divider} />
-              <RouteField label="Bạn muốn đi đâu?" value={selectedDestination} />
+              <RouteField
+                label="Bạn muốn đi đâu?"
+                value={selectedDestination}
+                onPress={() => openLocationPicker('destination')}
+              />
             </View>
             <Pressable
               style={styles.swapButton}
@@ -586,12 +650,15 @@ export function CustomerHomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.popularList}
         >
-          {renderedPopularRoutes.map(route => (
+          {renderedPopularRoutes.map(popularRoute => (
             <View
-              key={route.id}
-              style={[styles.popularCard, { backgroundColor: route.color }]}
+              key={popularRoute.id}
+              style={[
+                styles.popularCard,
+                { backgroundColor: popularRoute.color },
+              ]}
             >
-              <Text style={styles.popularText}>{route.title}</Text>
+              <Text style={styles.popularText}>{popularRoute.title}</Text>
             </View>
           ))}
         </ScrollView>
@@ -633,12 +700,25 @@ function TransportTab({
   );
 }
 
-function RouteField({ label, value }: { label: string; value: string }) {
+function RouteField({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.routeField}>
+    <Pressable
+      style={styles.routeField}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
       <Text style={styles.routeLabel}>{label}</Text>
       <Text style={styles.routeValue}>{value}</Text>
-    </View>
+    </Pressable>
   );
 }
 
