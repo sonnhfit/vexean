@@ -219,10 +219,12 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   const { showToast } = useToast();
   const initialPhone = route.params?.initialPhone || '';
   const initialPassengerName = route.params?.initialPassengerName || '';
+  const initialTripId = route.params?.initialTripId;
+  const initialTravelDate = route.params?.initialTravelDate;
   const today = useMemo(() => formatLocalDate(new Date()), []);
   const tomorrow = useMemo(() => formatLocalDate(addDays(new Date(), 1)), []);
 
-  const [travelDate, setTravelDate] = useState(today);
+  const [travelDate, setTravelDate] = useState(initialTravelDate || today);
   const [trips, setTrips] = useState<OdooTripSummary[]>([]);
   const [selectedTrip, setSelectedTrip] = useState<OdooTripSummary | null>(
     null,
@@ -237,6 +239,9 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [booking, setBooking] = useState(false);
+  const [autoSelectedTripId, setAutoSelectedTripId] = useState<number | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
 
@@ -315,9 +320,71 @@ export function TicketBookingScreen({ route, navigation }: Props) {
     }
   }, []);
 
+  const fetchInitialTripDetail = useCallback(async (tripId: number) => {
+    setLoadingDetail(true);
+    setDetailError(null);
+    setSelectedSeats([]);
+
+    try {
+      const data = await requestJson<OdooTripDetail>(
+        `/api/nhaxe/odoo/trips/${tripId}/`,
+        {
+          method: 'GET',
+          auth: true,
+          logLabel: 'odoo-initial-trip-detail',
+        },
+      );
+      setSelectedTrip(data);
+      setTripDetail(data);
+      setAutoSelectedTripId(tripId);
+    } catch (tripError) {
+      const message =
+        tripError instanceof Error
+          ? tripError.message
+          : 'Không tải được sơ đồ ghế.';
+      setDetailError(message);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchTrips('initial');
   }, [fetchTrips]);
+
+  useEffect(() => {
+    if (!initialTripId || autoSelectedTripId === initialTripId) {
+      return;
+    }
+
+    const initialTrip = trips.find(trip => trip.id === initialTripId);
+    if (!initialTrip) {
+      return;
+    }
+
+    setAutoSelectedTripId(initialTripId);
+    setSelectedTrip(initialTrip);
+    fetchTripDetail(initialTrip);
+  }, [autoSelectedTripId, fetchTripDetail, initialTripId, trips]);
+
+  useEffect(() => {
+    if (
+      !initialTripId ||
+      loadingTrips ||
+      autoSelectedTripId === initialTripId ||
+      trips.some(trip => trip.id === initialTripId)
+    ) {
+      return;
+    }
+
+    fetchInitialTripDetail(initialTripId);
+  }, [
+    autoSelectedTripId,
+    fetchInitialTripDetail,
+    initialTripId,
+    loadingTrips,
+    trips,
+  ]);
 
   const selectTrip = (trip: OdooTripSummary) => {
     setSelectedTrip(trip);

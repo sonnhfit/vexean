@@ -252,6 +252,13 @@ export function TicketSearchResultsScreen({ route, navigation }: Props) {
     navigation.navigate('MainTabs', { screen: 'CustomerFavorites' });
   };
 
+  const chooseTripSeats = (trip: SearchTrip) => {
+    navigation.navigate('TicketBooking', {
+      initialTripId: trip.id,
+      initialTravelDate: params.travelDate,
+    });
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.header}>
@@ -354,6 +361,7 @@ export function TicketSearchResultsScreen({ route, navigation }: Props) {
                 featured={index === 0}
                 favorite={favoriteIds.has(trip.id)}
                 onFavorite={() => favoriteTrip(trip)}
+                onChooseSeat={() => chooseTripSeats(trip)}
               />
             ))
           : null}
@@ -414,11 +422,13 @@ function TripCard({
   featured,
   favorite,
   onFavorite,
+  onChooseSeat,
 }: {
   trip: SearchTrip;
   featured?: boolean;
   favorite: boolean;
   onFavorite: () => void;
+  onChooseSeat: () => void;
 }) {
   return (
     <View style={styles.tripCard}>
@@ -517,7 +527,7 @@ function TripCard({
             </View>
           ))}
         </View>
-        <Pressable style={styles.chooseSeatButton}>
+        <Pressable style={styles.chooseSeatButton} onPress={onChooseSeat}>
           <Text style={styles.chooseSeatText}>Chọn chỗ</Text>
         </Pressable>
       </View>
