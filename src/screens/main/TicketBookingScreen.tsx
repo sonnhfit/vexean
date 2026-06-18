@@ -20,8 +20,10 @@ import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { useToast } from '../../components/Toast';
 import { requestJson } from '../../services/apiClient';
+import { useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 import { RootStackParamList } from '../../types/navigation';
+import { getLinkedPhoneNumber } from '../../utils/userPhone';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TicketBooking'>;
 type IconName = ComponentProps<typeof Ionicons>['name'];
@@ -217,6 +219,7 @@ function getAutoPassengerName(phone: string) {
 
 export function TicketBookingScreen({ route, navigation }: Props) {
   const { showToast } = useToast();
+  const user = useAppSelector(state => state.auth.user);
   const initialPhone = route.params?.initialPhone || '';
   const initialPassengerName = route.params?.initialPassengerName || '';
   const initialTripId = route.params?.initialTripId;
@@ -231,8 +234,26 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   );
   const [tripDetail, setTripDetail] = useState<OdooTripDetail | null>(null);
   const [selectedSeats, setSelectedSeats] = useState<OdooSeat[]>([]);
-  const [passengerName, setPassengerName] = useState(initialPassengerName);
-  const [passengerPhone, setPassengerPhone] = useState(initialPhone);
+  const linkedPhone = useMemo(() => getLinkedPhoneNumber(user), [user]);
+  const profileName = useMemo(() => {
+    const fullName = user?.full_name?.trim();
+    if (fullName) {
+      return fullName;
+    }
+
+    const composedName = [user?.last_name, user?.first_name]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    return composedName || user?.username || '';
+  }, [user]);
+
+  const [passengerName, setPassengerName] = useState(
+    initialPassengerName || profileName,
+  );
+  const [passengerPhone, setPassengerPhone] = useState(
+    initialPhone || linkedPhone,
+  );
   const [passengerIdNumber, setPassengerIdNumber] = useState('');
   const [note, setNote] = useState('Khach goi tong dai');
   const [loadingTrips, setLoadingTrips] = useState(true);
@@ -351,6 +372,18 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   useEffect(() => {
     fetchTrips('initial');
   }, [fetchTrips]);
+
+  useEffect(() => {
+    if (!initialPassengerName && profileName && !passengerName.trim()) {
+      setPassengerName(profileName);
+    }
+  }, [initialPassengerName, passengerName, profileName]);
+
+  useEffect(() => {
+    if (!initialPhone && linkedPhone && !passengerPhone.trim()) {
+      setPassengerPhone(linkedPhone);
+    }
+  }, [initialPhone, linkedPhone, passengerPhone]);
 
   useEffect(() => {
     if (!initialTripId || autoSelectedTripId === initialTripId) {
