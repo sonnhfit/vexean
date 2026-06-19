@@ -7,6 +7,9 @@ import {
 } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -152,9 +155,9 @@ function padDatePart(value: number) {
 }
 
 function formatLocalDate(date: Date) {
-  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(
-    date.getDate(),
-  )}`;
+  return `${date.getFullYear()}-${padDatePart(
+    date.getMonth() + 1,
+  )}-${padDatePart(date.getDate())}`;
 }
 
 function addDays(base: Date, days: number) {
@@ -331,6 +334,8 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   );
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const hasPresetTravelDate = Boolean(initialTravelDate);
+  const hasPresetTrip = Boolean(initialTripId);
 
   const fetchTrips = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
@@ -393,32 +398,35 @@ export function TicketBookingScreen({ route, navigation }: Props) {
     return normalizeSeatsResponse(data);
   }, []);
 
-  const fetchTripDetail = useCallback(async (trip: OdooTripSummary) => {
-    setLoadingDetail(true);
-    setDetailError(null);
-    setSelectedSeats([]);
+  const fetchTripDetail = useCallback(
+    async (trip: OdooTripSummary) => {
+      setLoadingDetail(true);
+      setDetailError(null);
+      setSelectedSeats([]);
 
-    try {
-      const [data, seats] = await Promise.all([
-        requestJson<OdooTripDetail>(`/api/nhaxe/odoo/trips/${trip.id}/`, {
-          method: 'GET',
-          auth: true,
-          logLabel: 'odoo-trip-detail',
-        }),
-        fetchTripSeats(trip.id),
-      ]);
-      setTripDetail({ ...data, seats });
-    } catch (tripError) {
-      const message =
-        tripError instanceof Error
-          ? tripError.message
-          : 'Không tải được sơ đồ ghế.';
-      setTripDetail(null);
-      setDetailError(message);
-    } finally {
-      setLoadingDetail(false);
-    }
-  }, [fetchTripSeats]);
+      try {
+        const [data, seats] = await Promise.all([
+          requestJson<OdooTripDetail>(`/api/nhaxe/odoo/trips/${trip.id}/`, {
+            method: 'GET',
+            auth: true,
+            logLabel: 'odoo-trip-detail',
+          }),
+          fetchTripSeats(trip.id),
+        ]);
+        setTripDetail({ ...data, seats });
+      } catch (tripError) {
+        const message =
+          tripError instanceof Error
+            ? tripError.message
+            : 'Không tải được sơ đồ ghế.';
+        setTripDetail(null);
+        setDetailError(message);
+      } finally {
+        setLoadingDetail(false);
+      }
+    },
+    [fetchTripSeats],
+  );
 
   const fetchInitialTripDetail = useCallback(
     async (tripId: number) => {
@@ -503,16 +511,27 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   ]);
 
   const selectTrip = (trip: OdooTripSummary) => {
+    Keyboard.dismiss();
     setSelectedTrip(trip);
     fetchTripDetail(trip);
   };
 
   const changeTravelDate = (value: string) => {
+    Keyboard.dismiss();
     setTravelDate(value);
     setSelectedTrip(null);
     setTripDetail(null);
     setSelectedSeats([]);
     setDetailError(null);
+  };
+
+  const searchTravelDate = () => {
+    Keyboard.dismiss();
+    setSelectedTrip(null);
+    setTripDetail(null);
+    setSelectedSeats([]);
+    setDetailError(null);
+    fetchTrips();
   };
 
   const onRefresh = async () => {
@@ -554,20 +573,28 @@ export function TicketBookingScreen({ route, navigation }: Props) {
     0,
   );
   const selectedSeatPriceLines = selectedSeats
-    .map(seat => `${seat.name}: ${formatMoney(getSeatPrice(seat, selectedTripForSummary))}`)
+    .map(
+      seat =>
+        `${seat.name}: ${formatMoney(
+          getSeatPrice(seat, selectedTripForSummary),
+        )}`,
+    )
     .join(' • ');
   const canBook = Boolean(
     selectedTripForSummary && selectedSeats.length > 0 && !booking,
   );
 
   const toggleSeat = (seat: OdooSeat) => {
+    Keyboard.dismiss();
     setSelectedSeats(current => {
       if (current.some(item => item.id === seat.id)) {
         return current.filter(item => item.id !== seat.id);
       }
 
       if (current.length >= MAX_SEATS_PER_BOOKING) {
-        setDetailError(`Chỉ được chọn tối đa ${MAX_SEATS_PER_BOOKING} ghế/lần.`);
+        setDetailError(
+          `Chỉ được chọn tối đa ${MAX_SEATS_PER_BOOKING} ghế/lần.`,
+        );
         return current;
       }
 
@@ -585,6 +612,8 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   };
 
   const submitBooking = async () => {
+    Keyboard.dismiss();
+
     if (!selectedTripForSummary || selectedSeats.length === 0) {
       setDetailError('Vui lòng chọn chuyến và ít nhất một ghế trống.');
       return;
@@ -629,7 +658,9 @@ export function TicketBookingScreen({ route, navigation }: Props) {
                   const ticketPrice = ticket.price
                     ? ` - ${formatMoney(ticket.price)}`
                     : '';
-                  return `${ticket.name}${seatName !== 'Chưa cập nhật' ? ` - ghế ${seatName}` : ''}${ticketPrice}`;
+                  return `${ticket.name}${
+                    seatName !== 'Chưa cập nhật' ? ` - ghế ${seatName}` : ''
+                  }${ticketPrice}`;
                 })
                 .join('\n')
             : `Đã đặt ${data.total_tickets || selectedSeats.length} vé.`,
@@ -651,7 +682,11 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   return (
     <ScreenContainer
       title="Đặt vé"
-      subtitle="Chọn chuyến, chọn ghế, xác nhận nhanh"
+      subtitle={
+        hasPresetTrip
+          ? 'Chọn ghế và xác nhận nhanh'
+          : 'Chọn chuyến, chọn ghế, xác nhận nhanh'
+      }
       headerRight={
         <Pressable
           style={styles.backButton}
@@ -665,204 +700,246 @@ export function TicketBookingScreen({ route, navigation }: Props) {
         </Pressable>
       }
     >
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={APP_COLORS.primaryDark}
-          />
-        }
+      <KeyboardAvoidingView
+        style={styles.bookingLayout}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Ngày đi</Text>
-          <View style={styles.dateQuickRow}>
-            <DateChip
-              label="Hôm nay"
-              active={travelDate === today}
-              onPress={() => changeTravelDate(today)}
+        <ScrollView
+          style={styles.scrollArea}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={styles.contentContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={APP_COLORS.primaryDark}
             />
-            <DateChip
-              label="Ngày mai"
-              active={travelDate === tomorrow}
-              onPress={() => changeTravelDate(tomorrow)}
-            />
-          </View>
-          <View style={styles.dateInputRow}>
-            <Ionicons
-              name="calendar-outline"
-              size={16}
-              color={APP_COLORS.primaryDark}
-            />
-            <TextInput
-              value={travelDate}
-              onChangeText={changeTravelDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={APP_COLORS.placeholder}
-              style={styles.dateInput}
-            />
-            <Pressable style={styles.smallButton} onPress={() => fetchTrips()}>
-              <Ionicons
-                name="search-outline"
-                size={16}
-                color={APP_COLORS.surface}
-              />
-            </Pressable>
-          </View>
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        </View>
-
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Chuyến đi</Text>
-            {loadingTrips ? (
-              <ActivityIndicator color={APP_COLORS.primaryDark} size="small" />
-            ) : (
-              <Text style={styles.countText}>{trips.length} chuyến</Text>
-            )}
-          </View>
-
-          {!loadingTrips && trips.length === 0 ? (
-            <Text style={styles.emptyText}>Không có chuyến trong ngày này.</Text>
+          }
+        >
+          {!hasPresetTravelDate ? (
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Ngày đi</Text>
+              <View style={styles.dateQuickRow}>
+                <DateChip
+                  label="Hôm nay"
+                  active={travelDate === today}
+                  onPress={() => changeTravelDate(today)}
+                />
+                <DateChip
+                  label="Ngày mai"
+                  active={travelDate === tomorrow}
+                  onPress={() => changeTravelDate(tomorrow)}
+                />
+              </View>
+              <View style={styles.dateInputRow}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={16}
+                  color={APP_COLORS.primaryDark}
+                />
+                <TextInput
+                  value={travelDate}
+                  onChangeText={setTravelDate}
+                  onSubmitEditing={searchTravelDate}
+                  returnKeyType="search"
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={APP_COLORS.placeholder}
+                  style={styles.dateInput}
+                />
+                <Pressable
+                  style={styles.smallButton}
+                  onPress={searchTravelDate}
+                >
+                  <Ionicons
+                    name="search-outline"
+                    size={16}
+                    color={APP_COLORS.surface}
+                  />
+                </Pressable>
+              </View>
+              {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            </View>
           ) : null}
 
-          {trips.map(trip => (
-            <Pressable
-              key={trip.id}
-              style={[
-                styles.tripCard,
-                selectedTrip?.id === trip.id && styles.tripCardActive,
-              ]}
-              onPress={() => selectTrip(trip)}
-            >
-              <View style={styles.tripTopRow}>
-                <Text style={styles.tripRoute}>{getRouteName(trip)}</Text>
-                <Text style={styles.tripPrice}>{getTripDisplayPrice(trip)}</Text>
+          {!hasPresetTrip ? (
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Chuyến đi</Text>
+                {loadingTrips ? (
+                  <ActivityIndicator
+                    color={APP_COLORS.primaryDark}
+                    size="small"
+                  />
+                ) : (
+                  <Text style={styles.countText}>{trips.length} chuyến</Text>
+                )}
               </View>
-              <View style={styles.tripMetaRow}>
-                <TripMeta
-                  icon="time-outline"
-                  text={formatDateTime(trip.departure_time)}
-                />
-                <TripMeta icon="bus-outline" text={getVehicleName(trip)} />
-              </View>
-              <View style={styles.tripBottomRow}>
-                <Text style={styles.tripSeatText}>
-                  Còn {trip.available_seats}/{trip.total_seats} ghế
-                </Text>
-                {trip.arrival_time ? (
-                  <Text style={styles.tripSeatText}>
-                    Đến {formatTime(trip.arrival_time)}
-                  </Text>
-                ) : null}
-              </View>
-            </Pressable>
-          ))}
-        </View>
 
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Sơ đồ ghế</Text>
-            {loadingDetail ? (
-              <ActivityIndicator color={APP_COLORS.primaryDark} size="small" />
+              {!loadingTrips && trips.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  Không có chuyến trong ngày này.
+                </Text>
+              ) : null}
+
+              {trips.map(trip => (
+                <Pressable
+                  key={trip.id}
+                  style={[
+                    styles.tripCard,
+                    selectedTrip?.id === trip.id && styles.tripCardActive,
+                  ]}
+                  onPress={() => selectTrip(trip)}
+                >
+                  <View style={styles.tripTopRow}>
+                    <Text style={styles.tripRoute}>{getRouteName(trip)}</Text>
+                    <Text style={styles.tripPrice}>
+                      {getTripDisplayPrice(trip)}
+                    </Text>
+                  </View>
+                  <View style={styles.tripMetaRow}>
+                    <TripMeta
+                      icon="time-outline"
+                      text={formatDateTime(trip.departure_time)}
+                    />
+                    <TripMeta icon="bus-outline" text={getVehicleName(trip)} />
+                  </View>
+                  <View style={styles.tripBottomRow}>
+                    <Text style={styles.tripSeatText}>
+                      Còn {trip.available_seats}/{trip.total_seats} ghế
+                    </Text>
+                    {trip.arrival_time ? (
+                      <Text style={styles.tripSeatText}>
+                        Đến {formatTime(trip.arrival_time)}
+                      </Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Sơ đồ ghế</Text>
+              {loadingDetail ? (
+                <ActivityIndicator
+                  color={APP_COLORS.primaryDark}
+                  size="small"
+                />
+              ) : null}
+            </View>
+
+            {!selectedTrip ? (
+              <Text style={styles.emptyText}>
+                {hasPresetTrip
+                  ? 'Đang tải sơ đồ ghế cho chuyến đã chọn.'
+                  : 'Chọn một chuyến để xem ghế.'}
+              </Text>
+            ) : null}
+
+            {selectedTripForSummary && !loadingDetail ? (
+              <View style={styles.tripSummary}>
+                <Text style={styles.summaryTitle}>
+                  {getRouteName(selectedTripForSummary)}
+                </Text>
+                <Text style={styles.summaryMeta}>
+                  {formatDateTime(selectedTripForSummary.departure_time)} -{' '}
+                  {getVehicleName(selectedTripForSummary)}
+                </Text>
+                <Text style={styles.summaryMeta}>
+                  Còn {selectedTripForSummary.available_seats} ghế trống
+                </Text>
+              </View>
+            ) : null}
+
+            {detailError ? (
+              <Text style={styles.errorText}>{detailError}</Text>
+            ) : null}
+
+            {floors.map(([floor, seats]) => (
+              <SeatFloor
+                key={floor}
+                floor={floor}
+                seats={seats}
+                trip={selectedTripForSummary}
+                selectedSeatIds={selectedSeats.map(seat => seat.id)}
+                onSelect={toggleSeat}
+              />
+            ))}
+
+            {tripDetail ? (
+              <View style={styles.legendRow}>
+                <SeatLegend state="available" />
+                <SeatLegend state="booked" />
+                <SeatLegend state="occupied" />
+                <SeatLegend state="blocked" />
+              </View>
             ) : null}
           </View>
 
-          {!selectedTrip ? (
-            <Text style={styles.emptyText}>Chọn một chuyến để xem ghế.</Text>
-          ) : null}
-
-          {selectedTripForSummary && !loadingDetail ? (
-            <View style={styles.tripSummary}>
-              <Text style={styles.summaryTitle}>
-                {getRouteName(selectedTripForSummary)}
-              </Text>
-              <Text style={styles.summaryMeta}>
-                {formatDateTime(selectedTripForSummary.departure_time)} -{' '}
-                {getVehicleName(selectedTripForSummary)}
-              </Text>
-              <Text style={styles.summaryMeta}>
-                Còn {selectedTripForSummary.available_seats} ghế trống
-              </Text>
-            </View>
-          ) : null}
-
-          {detailError ? (
-            <Text style={styles.errorText}>{detailError}</Text>
-          ) : null}
-
-          {floors.map(([floor, seats]) => (
-            <SeatFloor
-              key={floor}
-              floor={floor}
-              seats={seats}
-              trip={selectedTripForSummary}
-              selectedSeatIds={selectedSeats.map(seat => seat.id)}
-              onSelect={toggleSeat}
-            />
-          ))}
-
-          {tripDetail ? (
-            <View style={styles.legendRow}>
-              <SeatLegend state="available" />
-              <SeatLegend state="booked" />
-              <SeatLegend state="occupied" />
-              <SeatLegend state="blocked" />
-            </View>
-          ) : null}
-        </View>
-
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Thông tin khách</Text>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Tên khách</Text>
-            <TextInput
-              value={passengerName}
-              onChangeText={setPassengerName}
-              placeholder={getAutoPassengerName(passengerPhone)}
-              placeholderTextColor={APP_COLORS.placeholder}
-              style={styles.input}
-            />
-          </View>
-          <View style={styles.rowInputs}>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>Số điện thoại</Text>
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>Thông tin khách</Text>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Tên khách</Text>
               <TextInput
-                value={passengerPhone}
-                onChangeText={setPassengerPhone}
-                placeholder="0909000000"
+                value={passengerName}
+                onChangeText={setPassengerName}
+                onSubmitEditing={Keyboard.dismiss}
+                returnKeyType="done"
+                placeholder={getAutoPassengerName(passengerPhone)}
                 placeholderTextColor={APP_COLORS.placeholder}
                 style={styles.input}
-                keyboardType="phone-pad"
               />
             </View>
-            <View style={styles.halfInput}>
-              <Text style={styles.label}>CCCD</Text>
+            <View style={styles.rowInputs}>
+              <View style={styles.halfInput}>
+                <Text style={styles.label}>Số điện thoại</Text>
+                <TextInput
+                  value={passengerPhone}
+                  onChangeText={setPassengerPhone}
+                  onSubmitEditing={Keyboard.dismiss}
+                  returnKeyType="done"
+                  placeholder="0909000000"
+                  placeholderTextColor={APP_COLORS.placeholder}
+                  style={styles.input}
+                  keyboardType="phone-pad"
+                />
+              </View>
+              <View style={styles.halfInput}>
+                <Text style={styles.label}>CCCD</Text>
+                <TextInput
+                  value={passengerIdNumber}
+                  onChangeText={setPassengerIdNumber}
+                  onSubmitEditing={Keyboard.dismiss}
+                  returnKeyType="done"
+                  placeholder="Bỏ trống"
+                  placeholderTextColor={APP_COLORS.placeholder}
+                  style={styles.input}
+                  keyboardType="number-pad"
+                />
+              </View>
+            </View>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Ghi chú</Text>
               <TextInput
-                value={passengerIdNumber}
-                onChangeText={setPassengerIdNumber}
-                placeholder="Bỏ trống"
+                value={note}
+                onChangeText={setNote}
+                onSubmitEditing={Keyboard.dismiss}
+                returnKeyType="done"
+                blurOnSubmit
+                placeholder="Khach goi tong dai"
                 placeholderTextColor={APP_COLORS.placeholder}
-                style={styles.input}
-                keyboardType="number-pad"
+                style={[styles.input, styles.noteInput]}
+                multiline
               />
             </View>
           </View>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Ghi chú</Text>
-            <TextInput
-              value={note}
-              onChangeText={setNote}
-              placeholder="Khach goi tong dai"
-              placeholderTextColor={APP_COLORS.placeholder}
-              style={[styles.input, styles.noteInput]}
-              multiline
-            />
-          </View>
+        </ScrollView>
 
+        <View style={styles.confirmFooter}>
           <View style={styles.selectedBox}>
             <Text style={styles.selectedText}>
               {selectedSeats.length > 0
@@ -873,10 +950,10 @@ export function TicketBookingScreen({ route, navigation }: Props) {
               {selectedSeats.length > 0
                 ? selectedSeatPriceLines
                 : selectedTripForSummary
-                  ? `${getRouteName(selectedTripForSummary)} - ${getTripDisplayPrice(
-                      selectedTripForSummary,
-                    )}`
-                  : 'Chọn chuyến để tiếp tục'}
+                ? `${getRouteName(
+                    selectedTripForSummary,
+                  )} - ${getTripDisplayPrice(selectedTripForSummary)}`
+                : 'Chọn chuyến để tiếp tục'}
             </Text>
             {selectedSeats.length > 0 ? (
               <Text style={styles.selectedTotalText}>
@@ -908,7 +985,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
             </View>
           </Pressable>
         </View>
-      </ScrollView>
+      </KeyboardAvoidingView>
     </ScreenContainer>
   );
 }
@@ -969,9 +1046,13 @@ function SeatFloor({
       {rows.map(row => (
         <View key={`${floor}-${row}`} style={styles.seatRow}>
           {Array.from({ length: maxCol }, (_, index) => index + 1).map(col => {
-            const seat = seats.find(item => item.row === row && item.col === col);
+            const seat = seats.find(
+              item => item.row === row && item.col === col,
+            );
             if (!seat) {
-              return <View key={`${floor}-${row}-${col}`} style={styles.seatGap} />;
+              return (
+                <View key={`${floor}-${row}-${col}`} style={styles.seatGap} />
+              );
             }
 
             const selectable = seat.state === 'available';
@@ -1042,8 +1123,14 @@ function SeatLegend({ state }: { state: string }) {
 }
 
 const styles = StyleSheet.create({
+  bookingLayout: {
+    flex: 1,
+  },
+  scrollArea: {
+    flex: 1,
+  },
   contentContainer: {
-    paddingBottom: 24,
+    paddingBottom: 12,
     gap: 12,
   },
   backButton: {
@@ -1307,6 +1394,13 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: APP_COLORS.background,
     marginBottom: 10,
+  },
+  confirmFooter: {
+    borderTopWidth: 1,
+    borderTopColor: APP_COLORS.border,
+    paddingTop: 10,
+    paddingBottom: 12,
+    backgroundColor: APP_COLORS.background,
   },
   selectedText: {
     color: APP_COLORS.textPrimary,
