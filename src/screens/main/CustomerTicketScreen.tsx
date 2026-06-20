@@ -210,6 +210,7 @@ export function CustomerTicketScreen({ route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [accountPhone, setAccountPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
 
   const activeTickets = useMemo(() => {
     return tickets.filter(ticket => {
@@ -345,7 +346,16 @@ export function CustomerTicketScreen({ route }: Props) {
         ) : null}
 
         {tickets.map(ticket => (
-          <TicketCard key={ticket.id} ticket={ticket} />
+          <TicketListItem
+            key={ticket.id}
+            ticket={ticket}
+            expanded={selectedTicketId === ticket.id}
+            onToggle={() =>
+              setSelectedTicketId(current =>
+                current === ticket.id ? null : ticket.id,
+              )
+            }
+          />
         ))}
       </ScrollView>
     </ScreenContainer>
@@ -376,102 +386,140 @@ function FeedbackCard({
   );
 }
 
-function TicketCard({ ticket }: { ticket: OdooTicket }) {
+function TicketListItem({
+  ticket,
+  expanded,
+  onToggle,
+}: {
+  ticket: OdooTicket;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const status = ticket.state || ticket.status || 'draft';
   const seatName = relationName(ticket.seat_id) || 'Chưa cập nhật';
   const code = ticket.name || ticket.booking_code || `Vé #${ticket.id}`;
 
   return (
-    <View style={styles.ticketCard}>
-      <View style={styles.cardHeader}>
-        <View style={styles.cardTitleWrap}>
+    <View style={styles.ticketListItem}>
+      <Pressable
+        style={styles.ticketSummary}
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityLabel={`${expanded ? 'Thu gọn' : 'Xem chi tiết'} ${code}`}
+      >
+        <View style={styles.ticketIcon}>
           <Ionicons
-            name="ticket-outline"
-            size={20}
+            name={expanded ? 'ticket' : 'ticket-outline'}
+            size={18}
             color={APP_COLORS.primaryDark}
           />
-          <View style={styles.cardTitleTextWrap}>
-            <Text style={styles.cardTitle}>{code}</Text>
-            <Text style={styles.cardMeta}>{getTripName(ticket)}</Text>
-          </View>
         </View>
-        <Text style={styles.badgeText}>{status}</Text>
-      </View>
+        <View style={styles.ticketSummaryText}>
+          <View style={styles.ticketTitleRow}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {code}
+            </Text>
+            <Text style={styles.badgeText} numberOfLines={1}>
+              {status}
+            </Text>
+          </View>
+          <Text style={styles.cardMeta} numberOfLines={1}>
+            {getRouteName(ticket)}
+          </Text>
+          <Text style={styles.compactMeta} numberOfLines={1}>
+            Ghế {seatName} - {formatDateTime(getDepartureTime(ticket))}
+          </Text>
+        </View>
+        <View style={styles.detailAction}>
+          <Text style={styles.detailActionText}>
+            {expanded ? 'Thu gọn' : 'Chi tiết'}
+          </Text>
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color={APP_COLORS.primaryDark}
+          />
+        </View>
+      </Pressable>
 
-      <View style={styles.mainInfoRow}>
-        <InfoPill icon="bus-outline" label={getRouteName(ticket)} />
-        <InfoPill icon="location-outline" label={`Ghế ${seatName}`} />
-      </View>
+      {expanded ? (
+        <View style={styles.expandedContent}>
+          <View style={styles.mainInfoRow}>
+            <InfoPill icon="bus-outline" label={getTripName(ticket)} />
+            <InfoPill icon="location-outline" label={`Ghế ${seatName}`} />
+          </View>
 
-      <View style={styles.timeline}>
-        {ticketSteps.map((step, index) => {
-          const active = index <= getTicketStepIndex(status);
-          return (
-            <View key={step} style={styles.timelineStep}>
-              <View
-                style={[
-                  styles.timelineDot,
-                  active && styles.timelineDotActive,
-                ]}
-              />
-              <Text
-                style={[
-                  styles.timelineText,
-                  active && styles.timelineTextActive,
-                ]}
-                numberOfLines={2}
-              >
-                {step}
-              </Text>
+          <View style={styles.timeline}>
+            {ticketSteps.map((step, index) => {
+              const active = index <= getTicketStepIndex(status);
+              return (
+                <View key={step} style={styles.timelineStep}>
+                  <View
+                    style={[
+                      styles.timelineDot,
+                      active && styles.timelineDotActive,
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.timelineText,
+                      active && styles.timelineTextActive,
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {step}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={styles.detailGrid}>
+            <DetailItem
+              icon="person-outline"
+              label="Hành khách"
+              value={ticket.passenger_name || 'Chưa cập nhật'}
+            />
+            <DetailItem
+              icon="call-outline"
+              label="Số điện thoại"
+              value={ticket.passenger_phone || 'Chưa cập nhật'}
+            />
+            <DetailItem
+              icon="time-outline"
+              label="Giờ đi"
+              value={formatDateTime(getDepartureTime(ticket))}
+            />
+            <DetailItem
+              icon="car-outline"
+              label="Xe"
+              value={getVehicleName(ticket)}
+            />
+            <DetailItem
+              icon="cash-outline"
+              label="Giá vé"
+              value={formatMoney(getTicketPrice(ticket))}
+            />
+            <DetailItem
+              icon="card-outline"
+              label="Thanh toán"
+              value={ticket.payment_status || 'Chưa cập nhật'}
+            />
+          </View>
+
+          {ticket.pickup_location || ticket.dropoff_location ? (
+            <View style={styles.locationBox}>
+              {ticket.pickup_location ? (
+                <Text style={styles.locationText}>
+                  Đón: {ticket.pickup_location}
+                </Text>
+              ) : null}
+              {ticket.dropoff_location ? (
+                <Text style={styles.locationText}>
+                  Trả: {ticket.dropoff_location}
+                </Text>
+              ) : null}
             </View>
-          );
-        })}
-      </View>
-
-      <View style={styles.detailGrid}>
-        <DetailItem
-          icon="person-outline"
-          label="Hành khách"
-          value={ticket.passenger_name || 'Chưa cập nhật'}
-        />
-        <DetailItem
-          icon="call-outline"
-          label="Số điện thoại"
-          value={ticket.passenger_phone || 'Chưa cập nhật'}
-        />
-        <DetailItem
-          icon="time-outline"
-          label="Giờ đi"
-          value={formatDateTime(getDepartureTime(ticket))}
-        />
-        <DetailItem
-          icon="car-outline"
-          label="Xe"
-          value={getVehicleName(ticket)}
-        />
-        <DetailItem
-          icon="cash-outline"
-          label="Giá vé"
-          value={formatMoney(getTicketPrice(ticket))}
-        />
-        <DetailItem
-          icon="card-outline"
-          label="Thanh toán"
-          value={ticket.payment_status || 'Chưa cập nhật'}
-        />
-      </View>
-
-      {ticket.pickup_location || ticket.dropoff_location ? (
-        <View style={styles.locationBox}>
-          {ticket.pickup_location ? (
-            <Text style={styles.locationText}>
-              Đón: {ticket.pickup_location}
-            </Text>
-          ) : null}
-          {ticket.dropoff_location ? (
-            <Text style={styles.locationText}>
-              Trả: {ticket.dropoff_location}
-            </Text>
           ) : null}
         </View>
       ) : null}
@@ -602,33 +650,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  ticketCard: {
+  ticketListItem: {
     borderWidth: 1,
     borderColor: APP_COLORS.border,
     borderRadius: 12,
-    padding: 12,
     backgroundColor: APP_COLORS.surface,
+    overflow: 'hidden',
   },
-  cardHeader: {
+  ticketSummary: {
+    minHeight: 76,
+    padding: 10,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 8,
   },
-  cardTitleWrap: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
+  ticketIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: APP_COLORS.primaryLight,
   },
-  cardTitleTextWrap: {
+  ticketSummaryText: {
     flex: 1,
     minWidth: 0,
+  },
+  ticketTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   cardTitle: {
+    flex: 1,
     color: APP_COLORS.textPrimary,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '900',
   },
   cardMeta: {
@@ -638,6 +694,13 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontWeight: '700',
   },
+  compactMeta: {
+    marginTop: 2,
+    color: APP_COLORS.textPrimary,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
+  },
   badgeText: {
     color: APP_COLORS.primaryDark,
     backgroundColor: APP_COLORS.primaryLight,
@@ -646,9 +709,34 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     fontSize: 11,
     fontWeight: '800',
+    maxWidth: 92,
+    overflow: 'hidden',
+  },
+  detailAction: {
+    minWidth: 72,
+    minHeight: 34,
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    backgroundColor: APP_COLORS.background,
+  },
+  detailActionText: {
+    color: APP_COLORS.primaryDark,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  expandedContent: {
+    borderTopWidth: 1,
+    borderTopColor: APP_COLORS.border,
+    padding: 12,
+    paddingTop: 10,
   },
   mainInfoRow: {
-    marginTop: 12,
     flexDirection: 'row',
     gap: 8,
   },
