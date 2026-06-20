@@ -79,6 +79,7 @@ type OdooTicketListResponse = OdooTicket[] | {
 };
 
 const ticketSteps = ['Đã đặt', 'Xác nhận', 'Chờ đi', 'Hoàn tất'];
+const ticketVisibleAfterExpiryMs = 3 * 24 * 60 * 60 * 1000;
 
 function relationName(value: OdooRelation | undefined) {
   return Array.isArray(value) ? value[1] : '';
@@ -199,6 +200,24 @@ function getDepartureTime(ticket: OdooTicket) {
   );
 }
 
+function getTicketExpiryBaseTime(ticket: OdooTicket) {
+  return (
+    ticket.arrival_time ||
+    ticket.trip?.arrival_time ||
+    ticket.departure_time ||
+    ticket.trip?.departure_time
+  );
+}
+
+function isTicketVisible(ticket: OdooTicket) {
+  const expiryBaseDate = parseOdooDateTime(getTicketExpiryBaseTime(ticket));
+  if (!expiryBaseDate) {
+    return true;
+  }
+
+  return Date.now() - expiryBaseDate.getTime() <= ticketVisibleAfterExpiryMs;
+}
+
 function getTicketPrice(ticket: OdooTicket) {
   return ticket.price || ticket.amount_total || ticket.total_amount;
 }
@@ -212,12 +231,16 @@ export function CustomerTicketScreen({ route }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
 
+  const visibleTickets = useMemo(() => {
+    return tickets.filter(isTicketVisible);
+  }, [tickets]);
+
   const activeTickets = useMemo(() => {
-    return tickets.filter(ticket => {
+    return visibleTickets.filter(ticket => {
       const status = normalizeStatus(ticket.state || ticket.status);
       return !status.includes('cancel');
     }).length;
-  }, [tickets]);
+  }, [visibleTickets]);
 
   const loadTickets = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
@@ -329,7 +352,9 @@ export function CustomerTicketScreen({ route }: Props) {
             />
           </View>
           <View style={styles.summaryTextWrap}>
-            <Text style={styles.summaryTitle}>{tickets.length} vé đã tìm thấy</Text>
+            <Text style={styles.summaryTitle}>
+              {visibleTickets.length} vé đang hiển thị
+            </Text>
             <Text style={styles.summaryText}>
               {activeTickets} vé đang hiệu lực
               {accountPhone ? ` - SĐT: ${accountPhone}` : ''}
@@ -337,15 +362,15 @@ export function CustomerTicketScreen({ route }: Props) {
           </View>
         </View>
 
-        {!loading && !error && tickets.length === 0 ? (
+        {!loading && !error && visibleTickets.length === 0 ? (
           <FeedbackCard
             icon="ticket-outline"
             title="Chưa có vé"
-            text="Khi bạn đặt vé, thông tin ghế và chuyến đi sẽ hiển thị tại đây."
+            text="Khi bạn đặt vé, thông tin ghế và chuyến đi còn hiệu lực sẽ hiển thị tại đây."
           />
         ) : null}
 
-        {tickets.map(ticket => (
+        {visibleTickets.map(ticket => (
           <TicketListItem
             key={ticket.id}
             ticket={ticket}
