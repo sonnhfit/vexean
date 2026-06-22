@@ -45,6 +45,21 @@ type SignInInput = {
   password: string;
 };
 
+type RequestCustomerOtpInput = {
+  phoneNumber: string;
+};
+
+type RequestCustomerOtpResponse = {
+  phone_number?: string;
+  message?: string;
+  expires_in?: number;
+};
+
+type VerifyCustomerOtpInput = {
+  phoneNumber: string;
+  otpCode: string;
+};
+
 type AuthState = {
   accessToken: string | null;
   refreshToken: string | null;
@@ -183,6 +198,71 @@ export const signIn = createAsyncThunk<LoginPayload, SignInInput, { rejectValue:
   },
 );
 
+export const requestCustomerOtp = createAsyncThunk<
+  RequestCustomerOtpResponse,
+  RequestCustomerOtpInput,
+  { rejectValue: string }
+>('auth/requestCustomerOtp', async ({ phoneNumber }, { rejectWithValue }) => {
+  try {
+    return await requestJson<RequestCustomerOtpResponse>(
+      '/api/nhaxe/customer/register/',
+      {
+        method: 'POST',
+        body: { phone_number: phoneNumber },
+        logLabel: 'requestCustomerOtp',
+      },
+    );
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ApiError') {
+      return rejectWithValue(error.message);
+    }
+
+    return rejectWithValue('Không thể gửi mã OTP. Vui lòng thử lại.');
+  }
+});
+
+export const verifyCustomerOtp = createAsyncThunk<
+  LoginPayload,
+  VerifyCustomerOtpInput,
+  { rejectValue: string }
+>('auth/verifyCustomerOtp', async ({ phoneNumber, otpCode }, { rejectWithValue }) => {
+  try {
+    const response = await requestJson<Partial<LoginPayload>>(
+      '/api/nhaxe/customer/verify-otp/',
+      {
+        method: 'POST',
+        body: { phone_number: phoneNumber, otp_code: otpCode },
+        logLabel: 'verifyCustomerOtp',
+      },
+    );
+
+    if (!response.access || !response.refresh) {
+      return rejectWithValue('Dữ liệu xác thực không hợp lệ từ máy chủ.');
+    }
+
+    const user = isAuthUser(response.user)
+      ? response.user
+      : normalizeProfileUser(
+          await requestJson<unknown>('/api/users/profile/', {
+            headers: { Authorization: `Bearer ${response.access}` },
+            logLabel: 'customerProfile',
+          }),
+        );
+
+    if (!user) {
+      return rejectWithValue('Không lấy được thông tin tài khoản. Vui lòng thử lại.');
+    }
+
+    return { access: response.access, refresh: response.refresh, user };
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ApiError') {
+      return rejectWithValue(error.message);
+    }
+
+    return rejectWithValue('Không thể xác thực mã OTP. Vui lòng thử lại.');
+  }
+});
+
 export const updateProfile = createAsyncThunk<
   AuthUser,
   UpdateProfileInput,
@@ -255,6 +335,33 @@ const authSlice = createSlice({
         state.refreshToken = null;
         state.user = null;
         state.hydrated = true;
+      })
+      .addCase(requestCustomerOtp.pending, state => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(requestCustomerOtp.fulfilled, state => {
+        state.status = 'idle';
+        state.error = null;
+      })
+      .addCase(requestCustomerOtp.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload || 'Không thể gửi mã OTP.';
+      })
+      .addCase(verifyCustomerOtp.pending, state => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(verifyCustomerOtp.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        state.accessToken = action.payload.access;
+        state.refreshToken = action.payload.refresh;
+        state.user = action.payload.user;
+        state.hydrated = true;
+      })
+      .addCase(verifyCustomerOtp.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload || 'Xác thực mã OTP thất bại.';
       })
       .addCase(updateProfile.pending, state => {
         state.status = 'loading';

@@ -1,13 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { configureStore, createListenerMiddleware } from '@reduxjs/toolkit';
-import authReducer, { signIn, signOut, updateProfile } from './authSlice';
+import {
+  signIn,
+  signOut,
+  updateProfile,
+  verifyCustomerOtp,
+} from './authSlice';
+import authReducer from './authSlice';
 
 const AUTH_STORAGE_KEY = 'vexean.auth';
 
 const authListenerMiddleware = createListenerMiddleware();
 
 authListenerMiddleware.startListening({
-  actionCreator: signIn.fulfilled,
+  matcher: action =>
+    signIn.fulfilled.match(action) || verifyCustomerOtp.fulfilled.match(action),
   effect: async action => {
     try {
       await AsyncStorage.setItem(

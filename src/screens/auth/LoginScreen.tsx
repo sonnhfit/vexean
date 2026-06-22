@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -12,7 +12,7 @@ import {
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
-import { signIn } from '../../store/authSlice';
+import { requestCustomerOtp, verifyCustomerOtp } from '../../store/authSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 
@@ -20,20 +20,57 @@ export function LoginScreen() {
   const dispatch = useAppDispatch();
   const { status, error } = useAppSelector(state => state.auth);
   const [phone, setPhone] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [usePasswordLogin, setUsePasswordLogin] = useState(false);
+  const [submittedPhone, setSubmittedPhone] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [resendSeconds, setResendSeconds] = useState(0);
 
   const isLoading = status === 'loading';
-  const canSubmit = Boolean(username.trim() && password) && !isLoading;
+  const isOtpStep = Boolean(submittedPhone);
+  const normalizedPhone = normalizePhoneNumber(phone);
+  const canSubmitPhone = Boolean(normalizedPhone) && !isLoading;
+  const canSubmitOtp = otpCode.length === 6 && !isLoading;
 
-  const handleSubmit = async () => {
-    if (!canSubmit) {
+  useEffect(() => {
+    if (resendSeconds <= 0) {
       return;
     }
 
-    await dispatch(signIn({ username: username.trim(), password }));
+    const timer = setTimeout(() => setResendSeconds(value => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendSeconds]);
+
+  const handleRequestOtp = async () => {
+    if (!canSubmitPhone) {
+      return;
+    }
+
+    const action = await dispatch(
+      requestCustomerOtp({ phoneNumber: normalizedPhone }),
+    );
+    if (!requestCustomerOtp.fulfilled.match(action)) {
+      return;
+    }
+
+    const response = action.payload;
+    setSubmittedPhone(response.phone_number || normalizedPhone);
+    setOtpCode('');
+    setResendSeconds(60);
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!canSubmitOtp) {
+      return;
+    }
+
+    await dispatch(
+      verifyCustomerOtp({ phoneNumber: submittedPhone, otpCode }),
+    );
+  };
+
+  const handleChangePhone = () => {
+    setSubmittedPhone('');
+    setOtpCode('');
+    setResendSeconds(0);
   };
 
   return (
@@ -71,138 +108,102 @@ export function LoginScreen() {
           </View>
 
           <View style={styles.formArea}>
-            {usePasswordLogin ? (
-              <View style={styles.passwordCard}>
-                <View style={styles.inputWrap}>
-                  <Ionicons
-                    name="person-outline"
-                    size={18}
-                    color={APP_COLORS.textSecondary}
-                  />
-                  <TextInput
-                    value={username}
-                    onChangeText={setUsername}
-                    style={styles.input}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    autoComplete="username"
-                    textContentType="username"
-                    placeholder="Username"
-                    placeholderTextColor="#a7a7a7"
-                  />
-                </View>
-                <View style={styles.inputWrap}>
-                  <Ionicons
-                    name="lock-closed-outline"
-                    size={18}
-                    color={APP_COLORS.textSecondary}
-                  />
-                  <TextInput
-                    value={password}
-                    onChangeText={setPassword}
-                    style={styles.input}
-                    secureTextEntry={!showPassword}
-                    autoComplete="password"
-                    textContentType="password"
-                    placeholder="Password"
-                    placeholderTextColor="#a7a7a7"
-                  />
-                  <Pressable
-                    onPress={() => setShowPassword(value => !value)}
-                    hitSlop={10}
-                    accessibilityRole="button"
-                    accessibilityLabel={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                  >
-                    <Ionicons
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={18}
-                      color={APP_COLORS.textSecondary}
-                    />
-                  </Pressable>
-                </View>
-                {error ? (
-                  <Text style={styles.errorText} accessibilityRole="alert">
-                    {error}
-                  </Text>
-                ) : null}
-                <Pressable
-                  onPress={handleSubmit}
-                  disabled={!canSubmit}
-                  style={({ pressed }) => [
-                    styles.submitButton,
-                    !canSubmit && styles.submitButtonDisabled,
-                    pressed && canSubmit && styles.buttonPressed,
-                  ]}
-                >
-                  {isLoading ? (
-                    <ActivityIndicator color={APP_COLORS.surface} />
-                  ) : (
-                    <Text style={styles.submitButtonText}>
-                      Đăng nhập
-                    </Text>
-                  )}
-                </Pressable>
-              </View>
-            ) : (
+            {!isOtpStep ? (
               <>
+                <Text style={styles.formTitle}>Đăng nhập bằng số điện thoại</Text>
+                <Text style={styles.formHint}>
+                  Chúng tôi sẽ gửi mã OTP để xác thực tài khoản của bạn.
+                </Text>
                 <View style={styles.phoneRow}>
-                  <Pressable style={styles.countryBox} accessibilityRole="button">
+                  <View style={styles.countryBox}>
                     <Text style={styles.flagText}>🇻🇳</Text>
                     <Text style={styles.countryCode}>(+84)</Text>
-                    <Ionicons name="chevron-down" size={18} color="#111111" />
-                  </Pressable>
+                  </View>
                   <View style={styles.phoneInputWrap}>
                     <TextInput
                       value={phone}
-                      onChangeText={setPhone}
+                      onChangeText={value => setPhone(value.replace(/[^0-9+]/g, ''))}
                       placeholder="Số điện thoại"
                       placeholderTextColor="#b7b7b7"
                       keyboardType="phone-pad"
+                      autoComplete="tel"
+                      textContentType="telephoneNumber"
                       style={styles.phoneInput}
                     />
                   </View>
                 </View>
 
                 <Pressable
-                  style={styles.primaryButton}
-                  onPress={() => setUsePasswordLogin(true)}
+                  onPress={handleRequestOtp}
+                  disabled={!canSubmitPhone}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    !canSubmitPhone && styles.submitButtonDisabled,
+                    pressed && canSubmitPhone && styles.buttonPressed,
+                  ]}
                 >
-                  <Text style={styles.primaryButtonText}>Đăng nhập</Text>
+                  {isLoading ? (
+                    <ActivityIndicator color={APP_COLORS.surface} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Nhận mã OTP</Text>
+                  )}
                 </Pressable>
               </>
+            ) : (
+              <View style={styles.otpArea}>
+                <Text style={styles.formTitle}>Nhập mã OTP</Text>
+                <Text style={styles.formHint}>
+                  Mã 6 số đã được gửi đến {displayPhoneNumber(submittedPhone)}.
+                </Text>
+                <TextInput
+                  value={otpCode}
+                  onChangeText={value => setOtpCode(value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="••••••"
+                  placeholderTextColor="#b7b7b7"
+                  keyboardType="number-pad"
+                  autoComplete="one-time-code"
+                  textContentType="oneTimeCode"
+                  maxLength={6}
+                  style={styles.otpInput}
+                  accessibilityLabel="Mã OTP gồm 6 chữ số"
+                />
+                <Pressable
+                  onPress={handleVerifyOtp}
+                  disabled={!canSubmitOtp}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    !canSubmitOtp && styles.submitButtonDisabled,
+                    pressed && canSubmitOtp && styles.buttonPressed,
+                  ]}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color={APP_COLORS.surface} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Xác nhận và đăng nhập</Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={handleRequestOtp}
+                  disabled={isLoading || resendSeconds > 0}
+                  style={styles.resendButton}
+                >
+                  <Text style={styles.resendButtonText}>
+                    {resendSeconds > 0
+                      ? `Gửi lại mã sau ${resendSeconds}s`
+                      : 'Gửi lại mã OTP'}
+                  </Text>
+                </Pressable>
+                <Pressable onPress={handleChangePhone} style={styles.changePhoneButton}>
+                  <Text style={styles.changePhoneText}>Đổi số điện thoại</Text>
+                </Pressable>
+              </View>
             )}
 
-            <Pressable
-              style={styles.passwordModeButton}
-              onPress={() => setUsePasswordLogin(value => !value)}
-            >
-              <Ionicons
-                name={usePasswordLogin ? 'call-outline' : 'key-outline'}
-                size={18}
-                color={APP_COLORS.primaryDark}
-              />
-              <Text style={styles.passwordModeText}>
-                {usePasswordLogin
-                  ? 'Sử dụng số điện thoại'
-                  : 'Sử dụng username/password'}
+            {error ? (
+              <Text style={styles.errorText} accessibilityRole="alert">
+                {error}
               </Text>
-            </Pressable>
-
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>hoặc</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            <SocialButton provider="google" title="Tiếp tục với Google" />
-            <SocialButton provider="apple" title="Tiếp tục với Apple" />
-
-            <View style={styles.registerRow}>
-              <Text style={styles.registerText}>Bạn chưa có tài khoản? </Text>
-              <Pressable>
-                <Text style={styles.registerLink}>Đăng ký</Text>
-              </Pressable>
-            </View>
+            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -210,23 +211,25 @@ export function LoginScreen() {
   );
 }
 
-function SocialButton({
-  provider,
-  title,
-}: {
-  provider: 'google' | 'apple';
-  title: string;
-}) {
-  return (
-    <Pressable style={styles.socialButton}>
-      {provider === 'google' ? (
-        <Text style={styles.googleMark}>G</Text>
-      ) : (
-        <Ionicons name="logo-apple" size={28} color="#000000" />
-      )}
-      <Text style={styles.socialButtonText}>{title}</Text>
-    </Pressable>
-  );
+function normalizePhoneNumber(value: string) {
+  const digits = value.replace(/\D/g, '');
+  if (/^0\d{9}$/.test(digits)) {
+    return `+84${digits.slice(1)}`;
+  }
+
+  if (/^84\d{9}$/.test(digits)) {
+    return `+${digits}`;
+  }
+
+  return '';
+}
+
+function displayPhoneNumber(phoneNumber: string) {
+  if (phoneNumber.startsWith('+84')) {
+    return `0${phoneNumber.slice(3)}`;
+  }
+
+  return phoneNumber;
 }
 
 const styles = StyleSheet.create({
@@ -343,6 +346,18 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     backgroundColor: APP_COLORS.surface,
   },
+  formTitle: {
+    color: '#111111',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  formHint: {
+    marginTop: 8,
+    marginBottom: 20,
+    color: APP_COLORS.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+  },
   phoneRow: {
     flexDirection: 'row',
     gap: 14,
@@ -389,6 +404,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: APP_COLORS.primaryDark,
+  },
+  otpArea: {
+    alignItems: 'stretch',
+  },
+  otpInput: {
+    minHeight: 58,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#dddddd',
+    borderRadius: 10,
+    color: '#111111',
+    fontSize: 25,
+    fontWeight: '700',
+    letterSpacing: 10,
+    paddingHorizontal: 20,
+    textAlign: 'center',
+  },
+  resendButton: {
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resendButtonText: {
+    color: APP_COLORS.primaryDark,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  changePhoneButton: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  changePhoneText: {
+    color: APP_COLORS.textSecondary,
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
   primaryButtonText: {
     color: APP_COLORS.surface,

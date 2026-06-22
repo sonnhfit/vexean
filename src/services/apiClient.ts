@@ -133,6 +133,14 @@ function extractApiErrorMessage(responseBody: unknown) {
     return data.detail;
   }
 
+  if (typeof data.message === 'string') {
+    return data.message;
+  }
+
+  if (typeof data.error === 'string') {
+    return data.error;
+  }
+
   if (
     Array.isArray(data.non_field_errors) &&
     typeof data.non_field_errors[0] === 'string'
