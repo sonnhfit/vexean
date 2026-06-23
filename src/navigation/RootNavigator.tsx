@@ -1,4 +1,4 @@
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AccountDetailScreen } from '../screens/account/AccountDetailScreen';
 import { EditProfileScreen } from '../screens/account/EditProfileScreen';
@@ -46,7 +46,11 @@ export function RootNavigator() {
           <Stack.Screen
             name="Profile"
             component={ProfileScreen}
-            options={{ title: 'Hồ sơ cá nhân' }}
+            options={{
+              title: 'Hồ sơ cá nhân',
+              headerBackVisible: true,
+              headerBackButtonDisplayMode: 'minimal',
+            }}
           />
           <Stack.Screen
             name="EditProfile"
@@ -90,11 +94,11 @@ export function RootNavigator() {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   loadingScreen: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: APP_COLORS.background,
   },
-} as const;
+});

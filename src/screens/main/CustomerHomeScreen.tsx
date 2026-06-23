@@ -41,9 +41,16 @@ type CustomerHomeNavigation = CompositeNavigationProp<
 type CustomerHomeRoute = RouteProp<MainTabParamList, 'CustomerHome'>;
 
 const popularRoutes = [
-  { id: 'fallback-sapa', title: 'Sapa', color: '#5c9f92' },
-  { id: 'fallback-ha-long', title: 'Hạ Long', color: '#4d8ea1' },
-  { id: 'fallback-da-lat', title: 'Đà Lạt', color: '#7b8f76' },
+  {
+    id: 'ha-long-ha-noi',
+    title: 'Hạ Long → Hà Nội',
+    color: '#4d8ea1',
+  },
+  {
+    id: 'cam-pha-ha-noi',
+    title: 'Cẩm Phả → Hà Nội',
+    color: '#5c9f92',
+  },
 ];
 
 const defaultServices: CustomerHomeServiceType[] = [
@@ -523,24 +530,14 @@ export function CustomerHomeScreen() {
         date: formatTravelDate(item.travel_date),
       }))
     : [];
-  const renderedPopularRoutes = homeData?.popular_routes.length
-    ? homeData.popular_routes.map((popularRoute, index) => ({
-        id: String(popularRoute.id),
-        title:
-          popularRoute.title ||
-          popularRoute.destination?.name ||
-          'Tuyến phổ biến',
-        color:
-          popularRoute.color ||
-          popularRoutes[index % popularRoutes.length]?.color ||
-          APP_COLORS.primaryDark,
-      }))
-    : popularRoutes;
+  // Chỉ hiển thị các tuyến An Nhiên đang vận hành trên Homescreen.
+  // Không dùng danh sách động từ API ở đây để các tuyến khác không xuất hiện lại.
+  const renderedPopularRoutes = popularRoutes;
   const travelDateOptions = useMemo(() => createTravelDateOptions(), []);
 
   const canClearRecentSearches = Boolean(recentSearches.length);
-  const fallbackOrigin = routeSwapped ? 'Bà Rịa-Vũng Tàu' : 'Hồ Chí Minh';
-  const fallbackDestination = routeSwapped ? 'Hồ Chí Minh' : 'Bà Rịa-Vũng Tàu';
+  const fallbackOrigin = routeSwapped ? 'Cẩm Phả' : 'Hà Nội';
+  const fallbackDestination = routeSwapped ? 'Cẩm Phả' : 'Cẩm Phả';
   const selectedOrigin = activeSearch?.origin?.name || fallbackOrigin;
   const selectedDestination =
     activeSearch?.destination?.name || fallbackDestination;
