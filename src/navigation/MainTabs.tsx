@@ -4,6 +4,7 @@ import Ionicons from '@react-native-vector-icons/ionicons';
 import { AccountScreen } from '../screens/account/AccountScreen';
 import { useAppSelector } from '../store/hooks';
 import { AdminScreen } from '../screens/main/AdminScreen';
+import { AdminBookingScreen } from '../screens/main/AdminBookingScreen';
 import { CallCenterScreen } from '../screens/main/CallCenterScreen';
 import { CargoScreen } from '../screens/main/CargoScreen';
 import { CustomerFavoritesScreen } from '../screens/main/CustomerFavoritesScreen';
@@ -121,7 +122,7 @@ export function MainTabs() {
           },
         }}
       >
-        <Tab.Screen name="CallCenter" component={CallCenterScreen} options={{ title: 'Đặt vé', tabBarIcon: ticketBookingIcon }} />
+        <Tab.Screen name="CallCenter" component={AdminBookingScreen} options={{ title: 'Đặt vé', tabBarIcon: ticketBookingIcon }} />
         <Tab.Screen name="CustomerOrders" component={CustomerTicketScreen} options={{ title: 'Vé nhận', tabBarIcon: ticketReceivedIcon }} />
         <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Lịch chạy', tabBarIcon: scheduleIcon }} />
         <Tab.Screen name="CustomerNotifications" component={CustomerNotificationsScreen} options={{ title: 'Thông báo', tabBarIcon: customerNotificationsIcon }} />
