@@ -52,12 +52,10 @@ type OSMSearchResult = {
 
 const popularOriginLocations: LocationPickerItem[] = [
   { id: 10001, name: 'Hà Nội' },
-  { id: 10002, name: 'Đà Nẵng', old: true },
-  { id: 10003, name: 'Hồ Chí Minh', old: true },
-  { id: 10004, name: 'Bà Rịa-Vũng Tàu', old: true },
-  { id: 10005, name: 'Quy Nhơn - Bình Định', old: true },
-  { id: 10006, name: 'Nha Trang - Khánh Hoà', old: true },
-  { id: 10007, name: 'Đà Lạt - Lâm Đồng', old: true },
+  { id: 10002, name: 'Vân Đồn', old: true },
+  { id: 10003, name: 'Cẩm Phả', old: true },
+  { id: 10004, name: 'Hạ Long', old: true },
+  { id: 10005, name: 'Quảng Yên', old: true },
 ];
 
 const popularDestinationLocations: LocationPickerItem[] = [

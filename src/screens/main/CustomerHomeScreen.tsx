@@ -51,6 +51,11 @@ const popularRoutes = [
     title: 'Cẩm Phả → Hà Nội',
     color: '#5c9f92',
   },
+    {
+    id: 'quang-yen-ha-noi',
+    title: 'Quảng Yên → Hà Nội',
+    color: '#1bbc9c',
+  },
 ];
 
 const defaultServices: CustomerHomeServiceType[] = [
