@@ -54,15 +54,15 @@ const popularRoutes = [
 ];
 
 const defaultServices: CustomerHomeServiceType[] = [
-  { id: 'coach', label: 'Xe khách', icon: 'bus', active: true },
+  // { id: 'coach', label: 'Xe khách', icon: 'bus', active: true },
   {
     id: 'limousine',
     label: 'Limousine',
     icon: 'sparkles-outline',
     active: true,
   },
-  { id: 'seat', label: 'Ghế ngồi', icon: 'ticket-outline', active: true },
-  { id: 'sleeper', label: 'Giường nằm', icon: 'bed-outline', active: true },
+  // { id: 'seat', label: 'Ghế ngồi', icon: 'ticket-outline', active: true },
+  // { id: 'sleeper', label: 'Giường nằm', icon: 'bed-outline', active: true },
 ];
 
 const defaultBenefits: CustomerHomeBenefit[] = [
