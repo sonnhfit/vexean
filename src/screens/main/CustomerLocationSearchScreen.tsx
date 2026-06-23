@@ -59,14 +59,11 @@ const popularOriginLocations: LocationPickerItem[] = [
 ];
 
 const popularDestinationLocations: LocationPickerItem[] = [
-  { id: 20001, name: 'Hà Giang', old: true },
-  { id: 20002, name: 'Hải Phòng', old: true },
-  { id: 20003, name: 'Nghệ An' },
-  { id: 20004, name: 'Ninh Bình', old: true },
-  { id: 20005, name: 'Quảng Ninh' },
-  { id: 20006, name: 'Sa Pa - Lào Cai', old: true },
-  { id: 20007, name: 'Sơn La' },
-  { id: 20008, name: 'Thanh Hoá' },
+  { id: 10001, name: 'Hà Nội' },
+  { id: 10002, name: 'Vân Đồn', old: true },
+  { id: 10003, name: 'Cẩm Phả', old: true },
+  { id: 10004, name: 'Hạ Long', old: true },
+  { id: 10005, name: 'Quảng Yên', old: true },
 ];
 
 function locationDisplayName(location: CustomerSearchLocation) {
