@@ -11,8 +11,6 @@ import { CustomerHomeScreen } from '../screens/main/CustomerHomeScreen';
 import { CustomerNotificationsScreen } from '../screens/main/CustomerNotificationsScreen';
 import { CustomerTicketScreen } from '../screens/main/CustomerTicketScreen';
 import { DashboardScreen } from '../screens/main/DashboardScreen';
-import { DriverManagementScreen } from '../screens/main/DriverManagementScreen';
-import { FleetManagementScreen } from '../screens/main/FleetManagementScreen';
 import { MaintenanceScreen } from '../screens/main/MaintenanceScreen';
 import { PassengersScreen } from '../screens/main/PassengersScreen';
 import { APP_COLORS } from '../theme/colors';
@@ -34,13 +32,14 @@ const customerOrdersIcon = createTabBarIcon('receipt', 'receipt-outline');
 const customerFavoritesIcon = createTabBarIcon('heart', 'heart-outline');
 const customerNotificationsIcon = createTabBarIcon('notifications', 'notifications-outline');
 const passengersIcon = createTabBarIcon('people', 'people-outline');
-const fleetIcon = createTabBarIcon('bus', 'bus-outline');
 const cargoIcon = createTabBarIcon('cube', 'cube-outline');
-const driverIcon = createTabBarIcon('person', 'person-outline');
 const maintenanceIcon = createTabBarIcon('construct', 'construct-outline');
-const adminIcon = createTabBarIcon('shield-half', 'shield-outline');
 const callCenterIcon = createTabBarIcon('headset', 'headset-outline');
 const accountIcon = createTabBarIcon('person-circle', 'person-circle-outline');
+const ticketBookingIcon = createTabBarIcon('apps', 'apps-outline');
+const ticketReceivedIcon = createTabBarIcon('ticket', 'ticket-outline');
+const scheduleIcon = createTabBarIcon('bus', 'bus-outline');
+const menuIcon = createTabBarIcon('menu', 'menu-outline');
 
 export function MainTabs() {
   const user = useAppSelector(state => state.auth.user);
@@ -103,6 +102,34 @@ export function MainTabs() {
     );
   }
 
+  if (isAdmin) {
+    return (
+      <Tab.Navigator
+        screenOptions={{
+          headerTitleAlign: 'center',
+          headerStyle: { backgroundColor: APP_COLORS.primary },
+          headerTintColor: APP_COLORS.surface,
+          tabBarActiveTintColor: APP_COLORS.primary,
+          tabBarInactiveTintColor: APP_COLORS.textSecondary,
+          tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
+          tabBarStyle: {
+            borderTopColor: APP_COLORS.border,
+            backgroundColor: APP_COLORS.surface,
+            minHeight: 62,
+            paddingTop: 5,
+            paddingBottom: 6,
+          },
+        }}
+      >
+        <Tab.Screen name="CallCenter" component={CallCenterScreen} options={{ title: 'Đặt vé', tabBarIcon: ticketBookingIcon }} />
+        <Tab.Screen name="CustomerOrders" component={CustomerTicketScreen} options={{ title: 'Vé nhận', tabBarIcon: ticketReceivedIcon }} />
+        <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Lịch chạy', tabBarIcon: scheduleIcon }} />
+        <Tab.Screen name="CustomerNotifications" component={CustomerNotificationsScreen} options={{ title: 'Thông báo', tabBarIcon: customerNotificationsIcon }} />
+        <Tab.Screen name="Admin" component={AdminScreen} options={{ title: 'Menu', tabBarIcon: menuIcon }} />
+      </Tab.Navigator>
+    );
+  }
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -122,13 +149,6 @@ export function MainTabs() {
         component={DashboardScreen}
         options={{ title: 'Trang chủ', tabBarIcon: dashboardIcon }}
       />
-      {isAdmin ? (
-        <Tab.Screen
-          name="FleetManagement"
-          component={FleetManagementScreen}
-          options={{ title: 'Đội xe', tabBarIcon: fleetIcon }}
-        />
-      ) : null}
       {isCallCenter ? (
         <Tab.Screen
           name="Passengers"
@@ -136,32 +156,16 @@ export function MainTabs() {
           options={{ title: 'Hành khách', tabBarIcon: passengersIcon }}
         />
       ) : null}
-      {isAdmin ? (
-        <Tab.Screen
-          name="DriverManagement"
-          component={DriverManagementScreen}
-          options={{ title: 'Quản lý tài xế', tabBarIcon: driverIcon }}
-        />
-      ) : (
-        <Tab.Screen
-          name="Cargo"
-          component={CargoScreen}
-          options={{ title: 'Hàng hoá', tabBarIcon: cargoIcon }}
-        />
-      )}
-      {isAdmin ? (
-        <Tab.Screen
-          name="Admin"
-          component={AdminScreen}
-          options={{ title: 'Quản trị', tabBarIcon: adminIcon }}
-        />
-      ) : (
-        <Tab.Screen
-          name="Maintenance"
-          component={MaintenanceScreen}
-          options={{ title: 'Bảo dưỡng', tabBarIcon: maintenanceIcon }}
-        />
-      )}
+      <Tab.Screen
+        name="Cargo"
+        component={CargoScreen}
+        options={{ title: 'Hàng hoá', tabBarIcon: cargoIcon }}
+      />
+      <Tab.Screen
+        name="Maintenance"
+        component={MaintenanceScreen}
+        options={{ title: 'Bảo dưỡng', tabBarIcon: maintenanceIcon }}
+      />
       <Tab.Screen
         name="CallCenter"
         component={CallCenterScreen}

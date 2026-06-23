@@ -12,7 +12,7 @@ import {
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
-import { requestCustomerOtp, verifyCustomerOtp } from '../../store/authSlice';
+import { requestCustomerOtp, signIn, verifyCustomerOtp } from '../../store/authSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 
@@ -23,12 +23,17 @@ export function LoginScreen() {
   const [submittedPhone, setSubmittedPhone] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [resendSeconds, setResendSeconds] = useState(0);
+  const [loginMode, setLoginMode] = useState<'customer' | 'staff'>('customer');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [isPasswordVisible, setPasswordVisible] = useState(false);
 
   const isLoading = status === 'loading';
   const isOtpStep = Boolean(submittedPhone);
   const normalizedPhone = normalizePhoneNumber(phone);
   const canSubmitPhone = Boolean(normalizedPhone) && !isLoading;
   const canSubmitOtp = otpCode.length === 6 && !isLoading;
+  const canSubmitPassword = Boolean(username.trim() && password) && !isLoading;
 
   useEffect(() => {
     if (resendSeconds <= 0) {
@@ -73,6 +78,21 @@ export function LoginScreen() {
     setResendSeconds(0);
   };
 
+  const handlePasswordLogin = async () => {
+    if (!canSubmitPassword) {
+      return;
+    }
+
+    await dispatch(signIn({ username: username.trim(), password }));
+  };
+
+  const switchLoginMode = (mode: 'customer' | 'staff') => {
+    setLoginMode(mode);
+    setSubmittedPhone('');
+    setOtpCode('');
+    setResendSeconds(0);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <KeyboardAvoidingView
@@ -108,7 +128,75 @@ export function LoginScreen() {
           </View>
 
           <View style={styles.formArea}>
-            {!isOtpStep ? (
+            {loginMode === 'staff' ? (
+              <View style={styles.staffLoginArea}>
+                <Text style={styles.formTitle}>Đăng nhập nhân viên</Text>
+                <Text style={styles.formHint}>
+                  Dành cho tài xế và quản trị viên. Vui lòng dùng tài khoản được nhà xe cấp.
+                </Text>
+                <View style={styles.inputWrap}>
+                  <Ionicons name="person-outline" size={21} color={APP_COLORS.placeholder} />
+                  <TextInput
+                    value={username}
+                    onChangeText={setUsername}
+                    placeholder="Tài khoản"
+                    placeholderTextColor="#b7b7b7"
+                    autoCapitalize="none"
+                    autoComplete="username"
+                    textContentType="username"
+                    style={styles.input}
+                  />
+                </View>
+                <View style={styles.inputWrap}>
+                  <Ionicons name="lock-closed-outline" size={20} color={APP_COLORS.placeholder} />
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Mật khẩu"
+                    placeholderTextColor="#b7b7b7"
+                    autoComplete="current-password"
+                    textContentType="password"
+                    secureTextEntry={!isPasswordVisible}
+                    style={styles.input}
+                    onSubmitEditing={handlePasswordLogin}
+                  />
+                  <Pressable
+                    onPress={() => setPasswordVisible(value => !value)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={isPasswordVisible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                  >
+                    <Ionicons
+                      name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
+                      size={21}
+                      color={APP_COLORS.placeholder}
+                    />
+                  </Pressable>
+                </View>
+                <Pressable
+                  onPress={handlePasswordLogin}
+                  disabled={!canSubmitPassword}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    !canSubmitPassword && styles.submitButtonDisabled,
+                    pressed && canSubmitPassword && styles.buttonPressed,
+                  ]}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color={APP_COLORS.surface} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Đăng nhập</Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={() => switchLoginMode('customer')}
+                  style={styles.loginModeButton}
+                >
+                  <Ionicons name="phone-portrait-outline" size={18} color={APP_COLORS.primaryDark} />
+                  <Text style={styles.loginModeText}>Đăng nhập bằng số điện thoại</Text>
+                </Pressable>
+              </View>
+            ) : !isOtpStep ? (
               <>
                 <Text style={styles.formTitle}>Đăng nhập bằng số điện thoại</Text>
                 <Text style={styles.formHint}>
@@ -147,6 +235,13 @@ export function LoginScreen() {
                   ) : (
                     <Text style={styles.primaryButtonText}>Nhận mã OTP</Text>
                   )}
+                </Pressable>
+                <Pressable
+                  onPress={() => switchLoginMode('staff')}
+                  style={styles.loginModeButton}
+                >
+                  <Ionicons name="key-outline" size={18} color={APP_COLORS.primaryDark} />
+                  <Text style={styles.loginModeText}>Tài xế / Admin đăng nhập</Text>
                 </Pressable>
               </>
             ) : (
@@ -408,6 +503,9 @@ const styles = StyleSheet.create({
   otpArea: {
     alignItems: 'stretch',
   },
+  staffLoginArea: {
+    gap: 12,
+  },
   otpInput: {
     minHeight: 58,
     marginBottom: 24,
@@ -458,6 +556,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fbfa',
   },
   passwordModeText: {
+    color: APP_COLORS.primaryDark,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  loginModeButton: {
+    minHeight: 46,
+    marginTop: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  loginModeText: {
     color: APP_COLORS.primaryDark,
     fontSize: 15,
     fontWeight: '600',
