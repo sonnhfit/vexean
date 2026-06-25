@@ -1,15 +1,22 @@
 import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
 
@@ -56,6 +63,16 @@ type TripsResponse = {
   results?: OdooTripSummary[];
 };
 
+type ReinforceTripPayload = {
+  departure_time: string;
+  arrival_time?: string;
+  vehicle_id?: number;
+  driver_id?: number;
+  co_driver_id?: number | null;
+  state?: 'draft' | 'confirmed';
+  note?: string;
+};
+
 type RouteGroup = {
   key: string;
   routeName: string;
@@ -73,6 +90,12 @@ type FilterOption = {
   label: string;
   count: number;
 };
+type DateTimeField = 'departure' | 'arrival';
+type PickerMode = 'date' | 'time';
+type DateTimePickerState = {
+  field: DateTimeField;
+  mode: PickerMode;
+} | null;
 
 const ACTIVE_COLOR = APP_COLORS.primaryDark;
 const TRIP_STATES = 'confirmed';
@@ -114,6 +137,56 @@ function formatTime(value: string | undefined) {
 function formatHeaderDate(value: string) {
   const [year, month, day] = value.split('-');
   return `${Number(day)} tháng ${month}, ${year}`;
+}
+
+function formatIsoWithLocalOffset(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const offsetMinutes = -date.getTimezoneOffset();
+  const offsetSign = offsetMinutes >= 0 ? '+' : '-';
+  const absOffset = Math.abs(offsetMinutes);
+  const offsetHours = pad(Math.floor(absOffset / 60));
+  const offsetRemainder = pad(absOffset % 60);
+
+  return [
+    date.getFullYear(),
+    '-',
+    pad(date.getMonth() + 1),
+    '-',
+    pad(date.getDate()),
+    'T',
+    pad(date.getHours()),
+    ':',
+    pad(date.getMinutes()),
+    ':00',
+    offsetSign,
+    offsetHours,
+    ':',
+    offsetRemainder,
+  ].join('');
+}
+
+function getDefaultReinforceDeparture(trips: OdooTripSummary[]) {
+  const lastDeparture = sortTrips(trips)
+    .map(trip => parseOdooDateTime(trip.departure_time))
+    .filter((date): date is Date => Boolean(date))
+    .at(-1);
+  const date = lastDeparture ? new Date(lastDeparture) : new Date();
+  date.setHours(date.getHours() + 1, 0, 0, 0);
+  return formatIsoWithLocalOffset(date);
+}
+
+function getDateFromDateTimeInput(value: string) {
+  return parseOdooDateTime(value) || new Date();
+}
+
+function parseOptionalNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function getRouteName(trip: OdooTripSummary) {
@@ -309,6 +382,26 @@ export function DashboardScreen() {
   const [selectedRouteKey, setSelectedRouteKey] = useState<string | null>(null);
   const [selectedVehicleKey, setSelectedVehicleKey] = useState<string | null>(null);
   const [selectedDriverKey, setSelectedDriverKey] = useState<string | null>(null);
+  const [reinforceGroup, setReinforceGroup] = useState<RouteGroup | null>(null);
+  const [reinforceSourceTripId, setReinforceSourceTripId] = useState<number | null>(
+    null,
+  );
+  const [reinforceDepartureTime, setReinforceDepartureTime] = useState('');
+  const [reinforceArrivalTime, setReinforceArrivalTime] = useState('');
+  const [reinforceVehicleId, setReinforceVehicleId] = useState('');
+  const [reinforceDriverId, setReinforceDriverId] = useState('');
+  const [reinforceCoDriverId, setReinforceCoDriverId] = useState('');
+  const [reinforceState, setReinforceState] = useState<'draft' | 'confirmed'>(
+    'confirmed',
+  );
+  const [reinforceNote, setReinforceNote] = useState('');
+  const [dateTimePicker, setDateTimePicker] =
+    useState<DateTimePickerState>(null);
+  const [reinforceSubmitting, setReinforceSubmitting] = useState(false);
+  const [reinforceError, setReinforceError] = useState<string | null>(null);
+  const [collapsedRouteKeys, setCollapsedRouteKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const loadTrips = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
@@ -461,6 +554,196 @@ export function DashboardScreen() {
     setActiveFilterKind(null);
   };
 
+  const toggleRouteCollapsed = (routeKey: string) => {
+    setCollapsedRouteKeys(current => {
+      const next = new Set(current);
+      if (next.has(routeKey)) {
+        next.delete(routeKey);
+      } else {
+        next.add(routeKey);
+      }
+      return next;
+    });
+  };
+
+  const openReinforceModal = (group: RouteGroup) => {
+    const sourceTrip = group.trips[0];
+    if (!sourceTrip) {
+      return;
+    }
+
+    setReinforceGroup(group);
+    setReinforceSourceTripId(sourceTrip.id);
+    setReinforceDepartureTime(getDefaultReinforceDeparture(group.trips));
+    setReinforceArrivalTime('');
+    setReinforceVehicleId('');
+    setReinforceDriverId('');
+    setReinforceCoDriverId('');
+    setReinforceState('confirmed');
+    setReinforceNote('Chuyến tăng cường');
+    setDateTimePicker(null);
+    setReinforceError(null);
+  };
+
+  const closeReinforceModal = () => {
+    if (reinforceSubmitting) {
+      return;
+    }
+
+    setReinforceGroup(null);
+    setReinforceSourceTripId(null);
+    setDateTimePicker(null);
+    setReinforceError(null);
+  };
+
+  const reinforceSourceTrip = useMemo(
+    () =>
+      reinforceGroup?.trips.find(trip => trip.id === reinforceSourceTripId) ||
+      reinforceGroup?.trips[0] ||
+      null,
+    [reinforceGroup, reinforceSourceTripId],
+  );
+
+  const submitReinforceTrip = async () => {
+    if (!reinforceSourceTrip) {
+      setReinforceError('Chưa chọn chuyến gốc.');
+      return;
+    }
+
+    const departureTime = reinforceDepartureTime.trim();
+    if (!departureTime) {
+      setReinforceError('Vui lòng nhập giờ khởi hành.');
+      return;
+    }
+
+    if (!parseOdooDateTime(departureTime)) {
+      setReinforceError('Giờ khởi hành chưa đúng định dạng ISO.');
+      return;
+    }
+
+    const vehicleId = parseOptionalNumber(reinforceVehicleId);
+    const driverId = parseOptionalNumber(reinforceDriverId);
+    const coDriverIdInput = reinforceCoDriverId.trim();
+    const coDriverId =
+      coDriverIdInput.toLowerCase() === 'null'
+        ? null
+        : parseOptionalNumber(coDriverIdInput);
+    const invalidCoDriverId =
+      coDriverId === null && coDriverIdInput.toLowerCase() !== 'null';
+
+    if (vehicleId === null || driverId === null || invalidCoDriverId) {
+      setReinforceError('ID xe, tài xế hoặc phụ xe phải là số.');
+      return;
+    }
+
+    const payload: ReinforceTripPayload = {
+      departure_time: departureTime,
+      state: reinforceState,
+    };
+
+    if (reinforceArrivalTime.trim()) {
+      if (!parseOdooDateTime(reinforceArrivalTime.trim())) {
+        setReinforceError('Giờ đến chưa đúng định dạng ISO.');
+        return;
+      }
+      payload.arrival_time = reinforceArrivalTime.trim();
+    }
+
+    if (vehicleId !== undefined) {
+      payload.vehicle_id = vehicleId;
+    }
+
+    if (driverId !== undefined) {
+      payload.driver_id = driverId;
+    }
+
+    if (coDriverId !== undefined) {
+      payload.co_driver_id = coDriverId;
+    }
+
+    if (reinforceNote.trim()) {
+      payload.note = reinforceNote.trim();
+    }
+
+    setReinforceSubmitting(true);
+    setReinforceError(null);
+
+    try {
+      const createdTrip = await requestJson<OdooTripSummary>(
+        `/api/nhaxe/odoo/trips/${reinforceSourceTrip.id}/reinforce/`,
+        {
+          method: 'POST',
+          auth: true,
+          body: payload,
+          logLabel: 'admin-reinforce-trip',
+        },
+      );
+
+      setTrips(current => [
+        ...current.filter(trip => trip.id !== createdTrip.id),
+        createdTrip,
+      ]);
+      setReinforceGroup(null);
+      setReinforceSourceTripId(null);
+    } catch (reinforceTripError) {
+      const message =
+        reinforceTripError instanceof Error
+          ? reinforceTripError.message
+          : 'Không tạo được chuyến tăng cường.';
+      setReinforceError(message);
+    } finally {
+      setReinforceSubmitting(false);
+    }
+  };
+
+  const onDeparturePickerChange = (
+    event: DateTimePickerEvent,
+    selectedDate?: Date,
+  ) => {
+    if (event.type === 'dismissed') {
+      setDateTimePicker(null);
+      return;
+    }
+
+    if (!selectedDate || !dateTimePicker) {
+      return;
+    }
+
+    const currentValue =
+      dateTimePicker.field === 'departure'
+        ? reinforceDepartureTime
+        : reinforceArrivalTime || reinforceDepartureTime;
+    const currentDate = getDateFromDateTimeInput(currentValue);
+    const nextDate = new Date(selectedDate);
+
+    if (dateTimePicker.mode === 'date') {
+      nextDate.setHours(
+        currentDate.getHours(),
+        currentDate.getMinutes(),
+        0,
+        0,
+      );
+    } else {
+      nextDate.setFullYear(
+        currentDate.getFullYear(),
+        currentDate.getMonth(),
+        currentDate.getDate(),
+      );
+      nextDate.setSeconds(0, 0);
+    }
+
+    const nextValue = formatIsoWithLocalOffset(nextDate);
+    if (dateTimePicker.field === 'departure') {
+      setReinforceDepartureTime(nextValue);
+    } else {
+      setReinforceArrivalTime(nextValue);
+    }
+
+    if (Platform.OS === 'android') {
+      setDateTimePicker(null);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -490,6 +773,7 @@ export function DashboardScreen() {
           </View>
           <Pressable
             style={styles.filterButton}
+            hitSlop={8}
             onPress={() =>
               setActiveFilterKind(current => (current ? null : 'route'))
             }
@@ -518,9 +802,15 @@ export function DashboardScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterRow}
         >
-          <View style={styles.tuneIconWrap}>
+          <Pressable
+            style={styles.tuneIconWrap}
+            hitSlop={8}
+            onPress={() =>
+              setActiveFilterKind(current => (current ? null : 'route'))
+            }
+          >
             <Ionicons name="options-outline" size={24} color={APP_COLORS.textPrimary} />
-          </View>
+          </Pressable>
           <FilterChip
             label={`Gom nhóm (${routeGroups.length})`}
             active={groupEnabled}
@@ -645,9 +935,14 @@ export function DashboardScreen() {
             ) : null}
           </View>
         ) : (
-          routeGroups.map(group => (
+          routeGroups.map(group => {
+            const collapsed = collapsedRouteKeys.has(group.key);
+            return (
             <View key={group.key} style={styles.routeCard}>
-              <View style={styles.routeHeader}>
+              <Pressable
+                style={styles.routeHeader}
+                onPress={() => toggleRouteCollapsed(group.key)}
+              >
                 <View style={styles.routeCircle}>
                   <Text style={styles.routeCircleSold}>{group.bookedSeats}</Text>
                   <View style={styles.routeCircleDivider} />
@@ -662,43 +957,356 @@ export function DashboardScreen() {
                     <Text style={styles.boldText}>{group.lockedSeats}</Text>
                   </Text>
                 </View>
-                <Ionicons name="chevron-up" size={24} color={ACTIVE_COLOR} />
-              </View>
+                <View style={styles.routeChevronButton}>
+                  <Ionicons
+                    name={collapsed ? 'chevron-down' : 'chevron-up'}
+                    size={24}
+                    color={ACTIVE_COLOR}
+                  />
+                </View>
+              </Pressable>
 
-              <View style={styles.routeBodyHeader}>
-                <Text style={styles.tripCountText}>{group.trips.length} chuyến</Text>
-                <Pressable style={styles.addTripButton}>
-                  <Text style={styles.addTripText}>Tăng cường</Text>
-                  <Ionicons name="add" size={30} color={ACTIVE_COLOR} />
-                </Pressable>
-              </View>
+              {!collapsed ? (
+                <>
+                  <View style={styles.routeBodyHeader}>
+                    <Text style={styles.tripCountText}>{group.trips.length} chuyến</Text>
+                    <Pressable
+                      style={styles.addTripButton}
+                      hitSlop={8}
+                      onPress={() => openReinforceModal(group)}
+                    >
+                      <Text style={styles.addTripText}>Tăng cường</Text>
+                      <Ionicons name="add" size={30} color={ACTIVE_COLOR} />
+                    </Pressable>
+                  </View>
 
-              <View style={styles.tripGrid}>
-                {group.trips.map(trip => (
-                  <View key={trip.id} style={styles.tripTile}>
-                    <View style={styles.tripTileTop}>
+                  <View style={styles.tripGrid}>
+                    {group.trips.map(trip => (
+                      <View key={trip.id} style={styles.tripTile}>
+                        <View style={styles.tripTileTop}>
+                          <Text
+                            style={[
+                              styles.tripTime,
+                              isPastTrip(trip) && styles.tripTimePast,
+                            ]}
+                          >
+                            {formatTime(trip.departure_time)}
+                          </Text>
+                          <Text style={styles.tripSeats}>
+                            {trip.booked_seats}|{trip.available_seats}
+                          </Text>
+                        </View>
+                        <Text style={styles.tripRouteCode} numberOfLines={1}>
+                          {group.routeCode}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              ) : null}
+            </View>
+          );
+          })
+        )}
+      </ScrollView>
+
+      <Modal
+        visible={Boolean(reinforceGroup)}
+        animationType="slide"
+        transparent
+        onRequestClose={closeReinforceModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleWrap}>
+                <Text style={styles.modalTitle}>Tăng cường chuyến</Text>
+                <Text style={styles.modalSubtitle} numberOfLines={1}>
+                  {reinforceGroup?.routeName || 'Chưa chọn tuyến'}
+                </Text>
+              </View>
+              <Pressable
+                style={styles.modalCloseButton}
+                onPress={closeReinforceModal}
+              >
+                <Ionicons name="close" size={22} color={APP_COLORS.textPrimary} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalContent}
+            >
+              <Text style={styles.fieldLabel}>Chuyến gốc</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.sourceTripRow}
+              >
+                {reinforceGroup?.trips.map(trip => {
+                  const selected = trip.id === reinforceSourceTrip?.id;
+                  return (
+                    <Pressable
+                      key={trip.id}
+                      style={[
+                        styles.sourceTripChip,
+                        selected && styles.sourceTripChipActive,
+                      ]}
+                      onPress={() => setReinforceSourceTripId(trip.id)}
+                    >
                       <Text
                         style={[
-                          styles.tripTime,
-                          isPastTrip(trip) && styles.tripTimePast,
+                          styles.sourceTripTime,
+                          selected && styles.sourceTripTextActive,
                         ]}
                       >
                         {formatTime(trip.departure_time)}
                       </Text>
-                      <Text style={styles.tripSeats}>
-                        {trip.booked_seats}|{trip.available_seats}
+                      <Text
+                        style={[
+                          styles.sourceTripName,
+                          selected && styles.sourceTripTextActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {trip.name}
                       </Text>
-                    </View>
-                    <Text style={styles.tripRouteCode} numberOfLines={1}>
-                      {group.routeCode}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              <Text style={styles.fieldLabel}>Giờ khởi hành *</Text>
+              <View style={styles.dateTimePickerBox}>
+                <View style={styles.dateTimeValueRow}>
+                  <Ionicons
+                    name="time-outline"
+                    size={18}
+                    color={ACTIVE_COLOR}
+                  />
+                  <Text style={styles.dateTimeValue}>
+                    {reinforceDepartureTime}
+                  </Text>
+                </View>
+                <View style={styles.dateTimeActions}>
+                  <Pressable
+                    style={styles.dateTimeButton}
+                    onPress={() =>
+                      setDateTimePicker({ field: 'departure', mode: 'date' })
+                    }
+                  >
+                    <Ionicons
+                      name="calendar-outline"
+                      size={16}
+                      color={ACTIVE_COLOR}
+                    />
+                    <Text style={styles.dateTimeButtonText}>Chọn ngày</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.dateTimeButton}
+                    onPress={() =>
+                      setDateTimePicker({ field: 'departure', mode: 'time' })
+                    }
+                  >
+                    <Ionicons
+                      name="time-outline"
+                      size={16}
+                      color={ACTIVE_COLOR}
+                    />
+                    <Text style={styles.dateTimeButtonText}>Chọn giờ</Text>
+                  </Pressable>
+                </View>
+                {dateTimePicker?.field === 'departure' ? (
+                  <DateTimePicker
+                    value={getDateFromDateTimeInput(reinforceDepartureTime)}
+                    mode={dateTimePicker.mode}
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={onDeparturePickerChange}
+                  />
+                ) : null}
+              </View>
+
+              <Text style={styles.fieldLabel}>Giờ đến dự kiến</Text>
+              <View style={styles.dateTimePickerBox}>
+                <View style={styles.dateTimeValueRow}>
+                  <Ionicons
+                    name="flag-outline"
+                    size={18}
+                    color={ACTIVE_COLOR}
+                  />
+                  <Text
+                    style={[
+                      styles.dateTimeValue,
+                      !reinforceArrivalTime && styles.dateTimePlaceholder,
+                    ]}
+                  >
+                    {reinforceArrivalTime || 'Để trống để backend tự tính'}
+                  </Text>
+                </View>
+                <View style={styles.dateTimeActions}>
+                  <Pressable
+                    style={styles.dateTimeButton}
+                    onPress={() =>
+                      setDateTimePicker({ field: 'arrival', mode: 'date' })
+                    }
+                  >
+                    <Ionicons
+                      name="calendar-outline"
+                      size={16}
+                      color={ACTIVE_COLOR}
+                    />
+                    <Text style={styles.dateTimeButtonText}>Chọn ngày</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.dateTimeButton}
+                    onPress={() =>
+                      setDateTimePicker({ field: 'arrival', mode: 'time' })
+                    }
+                  >
+                    <Ionicons
+                      name="time-outline"
+                      size={16}
+                      color={ACTIVE_COLOR}
+                    />
+                    <Text style={styles.dateTimeButtonText}>Chọn giờ</Text>
+                  </Pressable>
+                  {reinforceArrivalTime ? (
+                    <Pressable
+                      style={styles.dateTimeClearButton}
+                      onPress={() => {
+                        setReinforceArrivalTime('');
+                        setDateTimePicker(null);
+                      }}
+                    >
+                      <Ionicons
+                        name="close"
+                        size={16}
+                        color={APP_COLORS.danger}
+                      />
+                    </Pressable>
+                  ) : null}
+                </View>
+                {dateTimePicker?.field === 'arrival' ? (
+                  <DateTimePicker
+                    value={getDateFromDateTimeInput(
+                      reinforceArrivalTime || reinforceDepartureTime,
+                    )}
+                    mode={dateTimePicker.mode}
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={onDeparturePickerChange}
+                  />
+                ) : null}
+              </View>
+
+              <View style={styles.fieldGrid}>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>ID xe</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={reinforceVehicleId}
+                    onChangeText={setReinforceVehicleId}
+                    placeholder="Dùng xe gốc"
+                    placeholderTextColor={APP_COLORS.placeholder}
+                    keyboardType="number-pad"
+                  />
+                </View>
+                <View style={styles.fieldHalf}>
+                  <Text style={styles.fieldLabel}>ID tài xế</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={reinforceDriverId}
+                    onChangeText={setReinforceDriverId}
+                    placeholder="Dùng tài xế gốc"
+                    placeholderTextColor={APP_COLORS.placeholder}
+                    keyboardType="number-pad"
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.fieldLabel}>ID phụ xe</Text>
+              <TextInput
+                style={styles.textInput}
+                value={reinforceCoDriverId}
+                onChangeText={setReinforceCoDriverId}
+                placeholder="Để trống dùng chuyến gốc, nhập null để bỏ"
+                placeholderTextColor={APP_COLORS.placeholder}
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.fieldLabel}>Trạng thái</Text>
+              <View style={styles.segmented}>
+                {(['confirmed', 'draft'] as const).map(state => (
+                  <Pressable
+                    key={state}
+                    style={[
+                      styles.segmentButton,
+                      reinforceState === state && styles.segmentButtonActive,
+                    ]}
+                    onPress={() => setReinforceState(state)}
+                  >
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        reinforceState === state && styles.segmentTextActive,
+                      ]}
+                    >
+                      {state === 'confirmed' ? 'Confirmed' : 'Draft'}
                     </Text>
-                  </View>
+                  </Pressable>
                 ))}
               </View>
+
+              <Text style={styles.fieldLabel}>Ghi chú</Text>
+              <TextInput
+                style={[styles.textInput, styles.noteInput]}
+                value={reinforceNote}
+                onChangeText={setReinforceNote}
+                placeholder="Chuyến tăng cường buổi sáng"
+                placeholderTextColor={APP_COLORS.placeholder}
+                multiline
+              />
+
+              {reinforceError ? (
+                <View style={styles.formError}>
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={16}
+                    color={APP_COLORS.danger}
+                  />
+                  <Text style={styles.formErrorText}>{reinforceError}</Text>
+                </View>
+              ) : null}
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={closeReinforceModal}
+              >
+                <Text style={styles.cancelButtonText}>Hủy</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.modalButton,
+                  styles.submitButton,
+                  reinforceSubmitting && styles.buttonDisabled,
+                ]}
+                onPress={submitReinforceTrip}
+                disabled={reinforceSubmitting}
+              >
+                {reinforceSubmitting ? (
+                  <ActivityIndicator color={APP_COLORS.surface} />
+                ) : (
+                  <Text style={styles.submitButtonText}>Tạo chuyến</Text>
+                )}
+              </Pressable>
             </View>
-          ))
-        )}
-      </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -945,6 +1553,14 @@ const styles = StyleSheet.create({
   routeInfo: {
     flex: 1,
   },
+  routeChevronButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: APP_COLORS.primaryLight,
+  },
   routeTitle: {
     color: ACTIVE_COLOR,
     fontSize: 21,
@@ -1026,6 +1642,238 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     paddingHorizontal: 7,
     paddingTop: 9,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.28)',
+  },
+  modalCard: {
+    maxHeight: '88%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    backgroundColor: APP_COLORS.surface,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: APP_COLORS.border,
+  },
+  modalTitleWrap: {
+    flex: 1,
+  },
+  modalTitle: {
+    color: APP_COLORS.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalSubtitle: {
+    marginTop: 3,
+    color: APP_COLORS.textSecondary,
+    fontSize: 13,
+  },
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: APP_COLORS.primaryLight,
+  },
+  modalContent: {
+    padding: 16,
+    gap: 8,
+  },
+  fieldLabel: {
+    color: APP_COLORS.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  sourceTripRow: {
+    gap: 8,
+    paddingBottom: 4,
+  },
+  sourceTripChip: {
+    minWidth: 92,
+    maxWidth: 136,
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 8,
+    backgroundColor: APP_COLORS.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  sourceTripChipActive: {
+    borderColor: ACTIVE_COLOR,
+    backgroundColor: APP_COLORS.primaryLight,
+  },
+  sourceTripTime: {
+    color: APP_COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  sourceTripName: {
+    marginTop: 2,
+    color: APP_COLORS.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  sourceTripTextActive: {
+    color: ACTIVE_COLOR,
+  },
+  textInput: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 8,
+    backgroundColor: APP_COLORS.surface,
+    paddingHorizontal: 12,
+    color: APP_COLORS.textPrimary,
+    fontSize: 14,
+  },
+  dateTimePickerBox: {
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 8,
+    backgroundColor: APP_COLORS.surface,
+    padding: 10,
+    gap: 10,
+  },
+  dateTimeValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dateTimeValue: {
+    flex: 1,
+    color: APP_COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dateTimePlaceholder: {
+    color: APP_COLORS.placeholder,
+    fontWeight: '500',
+  },
+  dateTimeActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dateTimeButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 7,
+    backgroundColor: APP_COLORS.primaryLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  dateTimeButtonText: {
+    color: ACTIVE_COLOR,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  dateTimeClearButton: {
+    width: 38,
+    minHeight: 38,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: APP_COLORS.dangerLight,
+  },
+  noteInput: {
+    minHeight: 76,
+    paddingTop: 10,
+    textAlignVertical: 'top',
+  },
+  fieldGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  fieldHalf: {
+    flex: 1,
+    gap: 8,
+  },
+  segmented: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  segmentButton: {
+    flex: 1,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: APP_COLORS.surface,
+  },
+  segmentButtonActive: {
+    backgroundColor: APP_COLORS.primaryLight,
+  },
+  segmentText: {
+    color: APP_COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  segmentTextActive: {
+    color: ACTIVE_COLOR,
+  },
+  formError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 8,
+    backgroundColor: APP_COLORS.dangerLight,
+    padding: 10,
+  },
+  formErrorText: {
+    flex: 1,
+    color: APP_COLORS.danger,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: APP_COLORS.border,
+    backgroundColor: APP_COLORS.surface,
+  },
+  modalButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    backgroundColor: APP_COLORS.surface,
+  },
+  cancelButtonText: {
+    color: APP_COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  submitButton: {
+    backgroundColor: ACTIVE_COLOR,
+  },
+  submitButtonText: {
+    color: APP_COLORS.surface,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  buttonDisabled: {
+    opacity: 0.65,
   },
   stateCard: {
     alignItems: 'center',
