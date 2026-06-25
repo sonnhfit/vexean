@@ -124,7 +124,7 @@ export function MainTabs() {
       >
         <Tab.Screen name="CallCenter" component={AdminBookingScreen} options={{ title: 'Đặt vé', tabBarIcon: ticketBookingIcon }} />
         <Tab.Screen name="CustomerOrders" component={CustomerTicketScreen} options={{ title: 'Vé nhận', tabBarIcon: ticketReceivedIcon }} />
-        <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Lịch chạy', tabBarIcon: scheduleIcon }} />
+        <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Lịch chạy', headerShown: false, tabBarIcon: scheduleIcon }} />
         <Tab.Screen name="CustomerNotifications" component={CustomerNotificationsScreen} options={{ title: 'Thông báo', tabBarIcon: customerNotificationsIcon }} />
         <Tab.Screen name="Admin" component={AdminScreen} options={{ title: 'Menu', tabBarIcon: menuIcon }} />
       </Tab.Navigator>

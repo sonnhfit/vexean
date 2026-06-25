@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -9,11 +12,10 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
+import { AppTextInput as TextInput } from '../../components/AppTextInput';
+import { useToast } from '../../components/Toast';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
-import { RootStackParamList } from '../../types/navigation';
 
 type OdooRelation = false | [number, string];
 type Trip = {
@@ -22,6 +24,10 @@ type Trip = {
   departure_time: string;
   available_seats: number;
   total_seats: number;
+  price?: number | string;
+  default_price?: number | string;
+  min_seat_price?: number | string;
+  max_seat_price?: number | string;
   route_id?: OdooRelation;
   vehicle?: { license_plate?: string; name?: string };
   route?: { name?: string; origin?: string; destination?: string };
@@ -32,10 +38,12 @@ type Seat = {
   state: 'available' | 'booked' | 'occupied' | 'blocked' | string;
   row: number;
   col: number;
+  effective_price?: number | string;
+  price?: number | string;
 };
 type TripsResponse = { results?: Trip[] };
 type SeatsResponse = Seat[] | { results?: Seat[]; seats?: Seat[] };
-type RootNavigation = NativeStackNavigationProp<RootStackParamList>;
+type BookingResponse = { total_tickets?: number; tickets?: { name?: string }[] };
 
 function localDate(date: Date) {
   const timezoneOffset = date.getTimezoneOffset() * 60000;
@@ -79,8 +87,26 @@ function seatColor(state: Seat['state']) {
   return APP_COLORS.placeholder;
 }
 
+function ticketPrice(seat: Seat, trip?: Trip | null) {
+  const value = Number(seat.effective_price ?? seat.price ?? trip?.default_price ?? trip?.price ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function formatMoney(value: number | string | undefined) {
+  const amount = Number(value || 0);
+  return amount > 0
+    ? amount.toLocaleString('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 })
+    : 'Chưa cập nhật';
+}
+
+function tripPriceLabel(trip: Trip) {
+  const min = Number(trip.min_seat_price ?? trip.default_price ?? trip.price ?? 0);
+  const max = Number(trip.max_seat_price ?? trip.default_price ?? trip.price ?? 0);
+  return min > 0 && max > min ? `${formatMoney(min)} – ${formatMoney(max)}` : formatMoney(min);
+}
+
 export function AdminBookingScreen() {
-  const navigation = useNavigation<RootNavigation>();
+  const { showToast } = useToast();
   const [travelDate, setTravelDate] = useState(() => localDate(new Date()));
   const [trips, setTrips] = useState<Trip[]>([]);
   const [activeTripIndex, setActiveTripIndex] = useState(0);
@@ -88,6 +114,13 @@ export function AdminBookingScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bookingVisible, setBookingVisible] = useState(false);
+  const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([]);
+  const [passengerName, setPassengerName] = useState('');
+  const [passengerPhone, setPassengerPhone] = useState('');
+  const [note, setNote] = useState('Khách đặt tại quầy');
+  const [booking, setBooking] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   const selectedTrip = trips[activeTripIndex] || null;
   const selectedTripId = selectedTrip?.id;
@@ -139,9 +172,53 @@ export function AdminBookingScreen() {
   }), [seats]);
 
   const sortedSeats = useMemo(() => [...seats].sort((a, b) => a.row - b.row || a.col - b.col), [seats]);
-  const goToBooking = () => {
+  const selectedBookingSeats = useMemo(
+    () => seats.filter(seat => selectedSeatIds.includes(seat.id)),
+    [seats, selectedSeatIds],
+  );
+  const selectedTotal = useMemo(
+    () => selectedBookingSeats.reduce((total, seat) => total + ticketPrice(seat, selectedTrip), 0),
+    [selectedBookingSeats, selectedTrip],
+  );
+  const openBooking = (seat?: Seat) => {
     if (!selectedTrip) return;
-    navigation.navigate('TicketBooking', { initialTripId: selectedTrip.id, initialTravelDate: travelDate });
+    setBookingError(null);
+    setSelectedSeatIds(seat?.state === 'available' ? [seat.id] : []);
+    setBookingVisible(true);
+  };
+  const toggleBookingSeat = (seat: Seat) => {
+    if (seat.state !== 'available') return;
+    setSelectedSeatIds(current => current.includes(seat.id) ? current.filter(id => id !== seat.id) : [...current, seat.id]);
+  };
+  const submitBooking = async () => {
+    if (!selectedTrip || selectedSeatIds.length === 0) {
+      setBookingError('Vui lòng chọn ít nhất một ghế trống.');
+      return;
+    }
+    setBooking(true);
+    setBookingError(null);
+    try {
+      const data = await requestJson<BookingResponse>('/api/nhaxe/odoo/book-ticket/', {
+        method: 'POST', auth: true,
+        body: {
+          trip_id: selectedTrip.id,
+          ...(selectedSeatIds.length === 1 ? { seat_id: selectedSeatIds[0] } : { seat_ids: selectedSeatIds }),
+          passenger_name: passengerName.trim() || 'Khách lẻ',
+          passenger_phone: passengerPhone.trim(),
+          create_partner: true,
+          note: note.trim(),
+        },
+        logLabel: 'admin-book-ticket',
+      });
+      setBookingVisible(false);
+      setSelectedSeatIds([]);
+      showToast({ type: 'success', title: 'Đặt vé thành công', message: `Đã đặt ${data.total_tickets || selectedBookingSeats.length} vé.` });
+      await Promise.all([fetchSeats(selectedTrip.id), fetchTrips(true)]);
+    } catch (requestError) {
+      setBookingError(requestError instanceof Error ? requestError.message : 'Không thể đặt vé. Vui lòng thử lại.');
+    } finally {
+      setBooking(false);
+    }
   };
   const changeTrip = (direction: number) => {
     if (!trips.length) return;
@@ -180,7 +257,7 @@ export function AdminBookingScreen() {
               <Text style={styles.summaryText}>○ Trống <Text style={styles.summaryValue}>{stats.available}</Text></Text>
               <Text style={styles.summaryText}>● Khóa <Text style={styles.summaryValue}>{stats.blocked}</Text></Text>
             </View>
-            <Text style={styles.moneyText}>Tổng tiền <Text style={styles.summaryValue}>0 đ</Text> • Đã thu <Text style={styles.summaryValue}>0 đ</Text></Text>
+            <Text style={styles.moneyText}>Giá vé <Text style={styles.summaryValue}>{tripPriceLabel(selectedTrip)}</Text></Text>
             <View style={styles.warningRow}>
               <Ionicons name="warning" size={18} color={APP_COLORS.warning} />
               <Text style={styles.warningText}>Chưa gán thông tin BSX, tài/phụ</Text>
@@ -188,7 +265,7 @@ export function AdminBookingScreen() {
           </View>
 
           <View style={styles.actionRow}>
-            <Pressable style={styles.quickButton} onPress={goToBooking}>
+            <Pressable style={styles.quickButton} onPress={() => openBooking()}>
               <Ionicons name="add" size={25} color={APP_COLORS.surface} />
               <Text style={styles.quickButtonText}>Đặt vé nhanh</Text>
             </Pressable>
@@ -209,14 +286,41 @@ export function AdminBookingScreen() {
           <View style={styles.seatMap}>
             <View style={styles.driver}><Text style={styles.driverText}>TÀI XẾ</Text></View>
             {sortedSeats.map(seat => (
-              <Pressable key={seat.id} style={[styles.seat, { borderColor: seatColor(seat.state) }]} onPress={goToBooking}>
+              <Pressable key={seat.id} style={[styles.seat, { borderColor: seatColor(seat.state) }]} onPress={() => openBooking(seat)}>
                 <Text style={[styles.seatLabel, { color: seatColor(seat.state) }]}>{seat.name}</Text>
+                <Text style={styles.seatPrice}>{formatMoney(ticketPrice(seat, selectedTrip))}</Text>
               </Pressable>
             ))}
             <View style={styles.driver}><Text style={styles.driverText}>GHẾ PHỤ</Text></View>
           </View>
         </> : null}
       </ScrollView>
+      <Modal visible={bookingVisible} transparent animationType="slide" onRequestClose={() => setBookingVisible(false)}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <Pressable style={styles.modalBackdrop} onPress={() => !booking && setBookingVisible(false)} />
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View><Text style={styles.modalTitle}>Đặt vé tại quầy</Text><Text style={styles.modalSubTitle}>{selectedTrip ? `${routeName(selectedTrip)} · ${formatTime(selectedTrip.departure_time)}` : ''}</Text></View>
+              <Pressable onPress={() => setBookingVisible(false)} hitSlop={10}><Ionicons name="close" size={26} color={APP_COLORS.textPrimary} /></Pressable>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalLabel}>Chọn ghế trống</Text>
+              <View style={styles.modalSeats}>
+                {sortedSeats.filter(seat => seat.state === 'available').map(seat => {
+                  const selected = selectedSeatIds.includes(seat.id);
+                  return <Pressable key={seat.id} onPress={() => toggleBookingSeat(seat)} style={[styles.modalSeat, selected && styles.modalSeatSelected]}><Text style={[styles.modalSeatName, selected && styles.modalSeatTextSelected]}>{seat.name}</Text><Text style={[styles.modalSeatPrice, selected && styles.modalSeatTextSelected]}>{formatMoney(ticketPrice(seat, selectedTrip))}</Text></Pressable>;
+                })}
+              </View>
+              <Text style={styles.modalLabel}>Thông tin khách</Text>
+              <TextInput value={passengerName} onChangeText={setPassengerName} placeholder="Tên khách (có thể bỏ trống)" placeholderTextColor={APP_COLORS.placeholder} style={styles.input} />
+              <TextInput value={passengerPhone} onChangeText={setPassengerPhone} placeholder="Số điện thoại" placeholderTextColor={APP_COLORS.placeholder} keyboardType="phone-pad" style={styles.input} />
+              <TextInput value={note} onChangeText={setNote} placeholder="Ghi chú" placeholderTextColor={APP_COLORS.placeholder} style={[styles.input, styles.noteInput]} multiline />
+              {bookingError ? <Text style={styles.bookingError}>{bookingError}</Text> : null}
+            </ScrollView>
+            <View style={styles.modalFooter}><View><Text style={styles.footerSeats}>{selectedBookingSeats.length ? `Ghế: ${selectedBookingSeats.map(seat => seat.name).join(', ')}` : 'Chưa chọn ghế'}</Text><Text style={styles.footerTotal}>Tổng tiền: {formatMoney(selectedTotal)}</Text></View><Pressable disabled={booking || !selectedSeatIds.length} onPress={submitBooking} style={[styles.confirmButton, (booking || !selectedSeatIds.length) && styles.disabledButton]}>{booking ? <ActivityIndicator color={APP_COLORS.surface} /> : <Text style={styles.confirmButtonText}>Xác nhận</Text>}</Pressable></View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -241,5 +345,6 @@ const styles = StyleSheet.create({
   vehicleBar: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, vehicleText: { flex: 1, marginHorizontal: 10, color: APP_COLORS.textSecondary, fontSize: 14, textAlign: 'center', fontWeight: '600' },
   seatMap: { marginTop: 12, alignSelf: 'center', width: '84%', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' },
   driver: { width: '30%', aspectRatio: 1, borderRadius: 10, backgroundColor: '#d8e4e3', alignItems: 'center', justifyContent: 'center' }, driverText: { color: APP_COLORS.textPrimary, fontSize: 13, fontWeight: '800' },
-  seat: { width: '30%', aspectRatio: 1, borderWidth: 2, borderRadius: 10, backgroundColor: APP_COLORS.surface, alignItems: 'center', justifyContent: 'center' }, seatLabel: { fontSize: 20, fontWeight: '800' },
+  seat: { width: '30%', aspectRatio: 1, borderWidth: 2, borderRadius: 10, backgroundColor: APP_COLORS.surface, alignItems: 'center', justifyContent: 'center' }, seatLabel: { fontSize: 20, fontWeight: '800' }, seatPrice: { marginTop: 3, fontSize: 10, color: APP_COLORS.textSecondary, fontWeight: '600' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.38)' }, modalBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }, modalCard: { maxHeight: '88%', padding: 20, paddingBottom: 16, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: APP_COLORS.surface }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }, modalTitle: { color: APP_COLORS.textPrimary, fontSize: 21, fontWeight: '800' }, modalSubTitle: { marginTop: 4, color: APP_COLORS.textSecondary, fontSize: 13 }, modalLabel: { marginBottom: 9, color: APP_COLORS.textPrimary, fontSize: 15, fontWeight: '700' }, modalSeats: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }, modalSeat: { width: '31%', minHeight: 56, padding: 6, borderRadius: 9, borderWidth: 1, borderColor: APP_COLORS.success, justifyContent: 'center', alignItems: 'center' }, modalSeatSelected: { backgroundColor: APP_COLORS.primaryDark, borderColor: APP_COLORS.primaryDark }, modalSeatName: { color: APP_COLORS.success, fontWeight: '800' }, modalSeatPrice: { marginTop: 2, color: APP_COLORS.textSecondary, fontSize: 10 }, modalSeatTextSelected: { color: APP_COLORS.surface }, input: { minHeight: 48, marginBottom: 10, paddingHorizontal: 13, borderWidth: 1, borderColor: APP_COLORS.border, borderRadius: 10, color: APP_COLORS.textPrimary, backgroundColor: APP_COLORS.background }, noteInput: { minHeight: 70, paddingTop: 12, textAlignVertical: 'top' }, bookingError: { marginBottom: 8, color: APP_COLORS.danger, fontSize: 13 }, modalFooter: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: APP_COLORS.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, footerSeats: { maxWidth: 190, color: APP_COLORS.textSecondary, fontSize: 12 }, footerTotal: { marginTop: 4, color: APP_COLORS.textPrimary, fontSize: 15, fontWeight: '800' }, confirmButton: { minWidth: 106, minHeight: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, backgroundColor: APP_COLORS.primaryDark }, confirmButtonText: { color: APP_COLORS.surface, fontWeight: '800' }, disabledButton: { opacity: 0.5 },
 });

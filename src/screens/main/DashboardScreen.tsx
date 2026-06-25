@@ -1,100 +1,292 @@
-import { ComponentProps, useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
-import { ScreenContainer } from '../../components/ScreenContainer';
+import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
+type OdooRelation = false | [number, string];
 
-const metrics: Array<{ label: string; value: string; note: string; icon: IconName }> = [
-  { label: 'Chuyến chạy', value: '18', note: '+3', icon: 'bus-outline' },
-  { label: 'Lấp đầy', value: '79%', note: '412/520 ghế', icon: 'people-outline' },
-  { label: 'Doanh thu', value: '248.4M', note: 'Hôm nay', icon: 'cash-outline' },
-  { label: 'Cảnh báo', value: '7', note: '2 mức cao', icon: 'warning-outline' },
-];
-
-const dispatchBoard = [
-  {
-    route: 'SGN → Cần Thơ',
-    pickupWindow: '06:30 - 07:00',
-    seats: '34/40',
-    status: 'Sẵn sàng',
-    tone: 'success' as const,
-  },
-  {
-    route: 'SGN → Đà Lạt',
-    pickupWindow: '07:10 - 07:40',
-    seats: '40/40',
-    status: 'Đầy chỗ',
-    tone: 'info' as const,
-  },
-  {
-    route: 'SGN → Phan Thiết',
-    pickupWindow: '08:00 - 08:30',
-    seats: '27/34',
-    status: 'Thiếu điểm đón',
-    tone: 'warning' as const,
-  },
-];
-
-const monitoringFeed = [
-  {
-    level: 'Cao',
-    vehicle: '51B-238.90',
-    message: 'Vào geofence ngoài kế hoạch',
-    channel: 'Telegram',
-    time: '09:12',
-    tone: 'danger' as const,
-  },
-  {
-    level: 'Trung bình',
-    vehicle: '62F-112.21',
-    message: 'Sai lệch GPS 2.1km',
-    channel: 'Zalo OA',
-    time: '09:05',
-    tone: 'warning' as const,
-  },
-  {
-    level: 'Thấp',
-    vehicle: '50H-556.78',
-    message: 'Check-in trễ 8 phút',
-    channel: 'Trung tâm điều phối',
-    time: '08:58',
-    tone: 'info' as const,
-  },
-];
-
-const toneColors = {
-  success: { bg: APP_COLORS.successLight, text: APP_COLORS.success },
-  info: { bg: APP_COLORS.infoLight, text: APP_COLORS.info },
-  warning: { bg: APP_COLORS.warningLight, text: APP_COLORS.warning },
-  danger: { bg: APP_COLORS.dangerLight, text: APP_COLORS.danger },
+type OdooTripSummary = {
+  id: number;
+  name: string;
+  state: string;
+  route_id: OdooRelation;
+  vehicle_id: OdooRelation;
+  driver_id?: OdooRelation;
+  departure_time: string;
+  arrival_time?: string;
+  price: number | string;
+  total_seats: number;
+  booked_seats: number;
+  available_seats: number;
+  route?: {
+    id?: number;
+    name?: string;
+    code?: string;
+    origin?: string;
+    destination?: string;
+    distance_km?: number;
+    duration_hours?: number;
+    price?: number;
+  };
+  vehicle?: {
+    id?: number;
+    name?: string;
+    license_plate?: string;
+    seat_count?: number;
+  };
+  driver?: {
+    id?: number;
+    name?: string;
+    phone?: string;
+  } | null;
 };
 
-function sectionHeader(icon: IconName, title: string) {
+type TripsResponse = {
+  results?: OdooTripSummary[];
+};
+
+type RouteGroup = {
+  key: string;
+  routeName: string;
+  routeCode: string;
+  trips: OdooTripSummary[];
+  totalSeats: number;
+  bookedSeats: number;
+  availableSeats: number;
+  lockedSeats: number;
+};
+
+const ACTIVE_COLOR = APP_COLORS.primaryDark;
+const TRIP_STATES = 'confirmed';
+const TRIP_LIMIT = '50';
+
+function formatQueryDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function relationName(value: OdooRelation | undefined) {
+  return Array.isArray(value) ? value[1] : 'Chưa cập nhật';
+}
+
+function parseOdooDateTime(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.includes(' ') ? value.replace(' ', 'T') : value;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatTime(value: string | undefined) {
+  const date = parseOdooDateTime(value);
+  if (!date) {
+    return '--:--';
+  }
+
+  return date.toLocaleTimeString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatHeaderDate(value: string) {
+  const [year, month, day] = value.split('-');
+  return `${Number(day)} tháng ${month}, ${year}`;
+}
+
+function getRouteName(trip: OdooTripSummary) {
+  if (trip.route?.origin && trip.route?.destination) {
+    return `${trip.route.origin} - ${trip.route.destination}`;
+  }
+
+  return trip.route?.name || relationName(trip.route_id);
+}
+
+function getRouteCode(trip: OdooTripSummary) {
+  if (trip.route?.code) {
+    return trip.route.code;
+  }
+
+  const [origin, destination] = getRouteName(trip)
+    .split(/\s*-\s*/)
+    .map(part => part.trim());
+  const initials = [origin, destination]
+    .filter(Boolean)
+    .map(part =>
+      part
+        .split(/\s+/)
+        .map(word => word[0])
+        .join('')
+        .toUpperCase(),
+    );
+
+  return initials.length >= 2 ? `${initials[0]}-${initials[1]}` : trip.name;
+}
+
+function isPastTrip(trip: OdooTripSummary) {
+  const departure = parseOdooDateTime(trip.departure_time);
+  return departure ? departure.getTime() < Date.now() : false;
+}
+
+function groupTripsByRoute(trips: OdooTripSummary[]) {
+  const map = new Map<string, RouteGroup>();
+
+  trips.forEach(trip => {
+    const routeName = getRouteName(trip);
+    const routeCode = getRouteCode(trip);
+    const key = String(trip.route?.id || (Array.isArray(trip.route_id) ? trip.route_id[0] : routeName));
+    const existing =
+      map.get(key) ||
+      ({
+        key,
+        routeName,
+        routeCode,
+        trips: [],
+        totalSeats: 0,
+        bookedSeats: 0,
+        availableSeats: 0,
+        lockedSeats: 0,
+      } satisfies RouteGroup);
+
+    existing.trips.push(trip);
+    existing.totalSeats += trip.total_seats || 0;
+    existing.bookedSeats += trip.booked_seats || 0;
+    existing.availableSeats += trip.available_seats || 0;
+    existing.lockedSeats += Math.max(
+      (trip.total_seats || 0) - (trip.booked_seats || 0) - (trip.available_seats || 0),
+      0,
+    );
+    map.set(key, existing);
+  });
+
+  return Array.from(map.values()).map(group => ({
+    ...group,
+    trips: [...group.trips].sort((a, b) => {
+      const departureA = parseOdooDateTime(a.departure_time)?.getTime() || 0;
+      const departureB = parseOdooDateTime(b.departure_time)?.getTime() || 0;
+      return departureA - departureB;
+    }),
+  }));
+}
+
+function FilterChip({
+  label,
+  active,
+  icon,
+}: {
+  label: string;
+  active?: boolean;
+  icon?: IconName;
+}) {
   return (
-    <View style={styles.sectionHeader}>
-      <View style={styles.sectionIconWrap}>
-        <Ionicons name={icon} size={16} color={APP_COLORS.primaryDark} />
-      </View>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <View style={[styles.filterChip, active && styles.filterChipActive]}>
+      {icon ? (
+        <Ionicons
+          name={icon}
+          size={16}
+          color={active ? ACTIVE_COLOR : APP_COLORS.placeholder}
+        />
+      ) : null}
+      <Text style={[styles.filterText, active && styles.filterTextActive]}>
+        {label}
+      </Text>
+      <Ionicons
+        name="chevron-down"
+        size={16}
+        color={active ? ACTIVE_COLOR : APP_COLORS.placeholder}
+      />
     </View>
   );
 }
 
 export function DashboardScreen() {
+  const [trips, setTrips] = useState<OdooTripSummary[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [scheduleDate] = useState(() => formatQueryDate(new Date()));
+
+  const loadTrips = useCallback(
+    async (mode: 'initial' | 'refresh' = 'initial') => {
+      if (mode === 'initial') {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
+
+      setError(null);
+
+      try {
+        const params = new URLSearchParams({
+          date_from: scheduleDate,
+          date_to: scheduleDate,
+          states: TRIP_STATES,
+          limit: TRIP_LIMIT,
+        });
+        const data = await requestJson<TripsResponse>(
+          `/api/nhaxe/odoo/trips/?${params.toString()}`,
+          {
+            method: 'GET',
+            auth: true,
+            logLabel: 'admin-schedule-trips',
+          },
+        );
+
+        setTrips(data.results || []);
+      } catch (tripError) {
+        const message =
+          tripError instanceof Error
+            ? tripError.message
+            : 'Không tải được lịch chạy.';
+        setError(message);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [scheduleDate],
+  );
+
+  useEffect(() => {
+    loadTrips('initial');
+  }, [loadTrips]);
+
+  const routeGroups = useMemo(() => groupTripsByRoute(trips), [trips]);
+  const totalSeats = useMemo(
+    () => trips.reduce((sum, trip) => sum + (trip.total_seats || 0), 0),
+    [trips],
+  );
+  const bookedSeats = useMemo(
+    () => trips.reduce((sum, trip) => sum + (trip.booked_seats || 0), 0),
+    [trips],
+  );
+  const soldRate = totalSeats ? Math.round((bookedSeats / totalSeats) * 100) : 0;
 
   const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 900);
-  }, []);
+    loadTrips('refresh');
+  }, [loadTrips]);
 
   return (
-    <ScreenContainer
-      title="Trang chủ"
-      subtitle="Tổng quan vận hành theo thời gian thực"
-    >
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Lịch chạy</Text>
+      </View>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
@@ -102,301 +294,425 @@ export function DashboardScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={APP_COLORS.primaryDark}
-            colors={[APP_COLORS.primaryDark, APP_COLORS.info]}
+            tintColor={ACTIVE_COLOR}
+            colors={[ACTIVE_COLOR]}
           />
         }
       >
-        <View style={styles.heroCard}>
-          <View>
-            <Text style={styles.heroLabel}>Hiệu suất hôm nay</Text>
-            <Text style={styles.heroValue}>79%</Text>
+        <View style={styles.dateRow}>
+          <View style={styles.dateBox}>
+            <Text style={styles.dateText}>
+              {formatHeaderDate(scheduleDate)} <Text style={styles.dateTripText}>(AL {trips.length}/5)</Text>
+            </Text>
           </View>
-          <View style={styles.heroRight}>
-            <Ionicons name="trending-up-outline" size={20} color={APP_COLORS.primaryDark} />
-            <Text style={styles.heroChange}>+4.2%</Text>
-          </View>
-        </View>
-
-        <View style={styles.quickActions}>
-          <View style={styles.quickAction}>
-            <Ionicons name="git-network-outline" size={14} color={APP_COLORS.primaryDark} />
-            <Text style={styles.quickActionText}>Điều phối</Text>
-          </View>
-          <View style={styles.quickAction}>
-            <Ionicons name="checkmark-circle-outline" size={14} color={APP_COLORS.primaryDark} />
-            <Text style={styles.quickActionText}>Check-in</Text>
-          </View>
-          <View style={styles.quickAction}>
-            <Ionicons name="notifications-outline" size={14} color={APP_COLORS.primaryDark} />
-            <Text style={styles.quickActionText}>Cảnh báo</Text>
-          </View>
-        </View>
-
-        <View style={styles.metricsGrid}>
-          {metrics.map((item) => (
-            <View key={item.label} style={styles.metricCard}>
-              <View style={styles.metricIconWrap}>
-                <Ionicons name={item.icon} size={16} color={APP_COLORS.primaryDark} />
-              </View>
-              <Text style={styles.metricValue}>{item.value}</Text>
-              <Text style={styles.metricLabel}>{item.label}</Text>
-              <Text style={styles.metricNote}>{item.note}</Text>
+          <View style={styles.filterButton}>
+            <Ionicons name="filter-outline" size={28} color={APP_COLORS.textPrimary} />
+            <View style={styles.filterBadge}>
+              <Text style={styles.filterBadgeText}>6</Text>
             </View>
-          ))}
+          </View>
         </View>
 
-        <View style={styles.sectionCard}>
-          {sectionHeader('map-outline', 'Điều phối chuyến')}
-          {dispatchBoard.map((trip) => (
-            <View key={`${trip.route}-${trip.pickupWindow}`} style={styles.rowCard}>
-              <View style={styles.rowHeader}>
-                <Text style={styles.rowTitle}>{trip.route}</Text>
-                <Text style={styles.rowSeats}>{trip.seats}</Text>
-              </View>
-              <Text style={styles.rowSub}>{trip.pickupWindow}</Text>
-              <View style={[styles.rowStatusWrap, { backgroundColor: toneColors[trip.tone].bg }] }>
-                <Ionicons name="ellipse" size={8} color={toneColors[trip.tone].text} />
-                <Text style={[styles.rowStatus, { color: toneColors[trip.tone].text }]}>{trip.status}</Text>
-              </View>
-            </View>
-          ))}
+        <View style={styles.salesRow}>
+          <Text style={styles.salesText}>
+            Đã bán: {bookedSeats}/{totalSeats} vé ({soldRate}%)
+          </Text>
+          <Pressable style={styles.statsLink}>
+            <Text style={styles.statsText}>Thống kê ngày</Text>
+            <Ionicons name="chevron-forward" size={24} color={ACTIVE_COLOR} />
+          </Pressable>
         </View>
 
-        <View style={styles.sectionCard}>
-          {sectionHeader('radio-outline', 'Cảnh báo realtime')}
-          {monitoringFeed.map((alert) => (
-            <View key={`${alert.vehicle}-${alert.time}`} style={styles.alertCard}>
-              <View style={styles.alertHeader}>
-                <Text style={styles.alertVehicle}>{alert.vehicle}</Text>
-                <Text style={styles.alertTime}>{alert.time}</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+          <View style={styles.tuneIconWrap}>
+            <Ionicons name="options-outline" size={24} color={APP_COLORS.textPrimary} />
+          </View>
+          <FilterChip label={`Gom nhóm (${routeGroups.length})`} active />
+          <FilterChip label="Tuyến" />
+          <FilterChip label="Biển số" />
+          <FilterChip label="Tài xế" />
+        </ScrollView>
+
+        {loading ? (
+          <View style={styles.stateCard}>
+            <ActivityIndicator color={ACTIVE_COLOR} />
+            <Text style={styles.stateText}>Đang tải lịch chạy từ Odoo...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.stateCard}>
+            <Ionicons name="alert-circle-outline" size={28} color={APP_COLORS.danger} />
+            <Text style={styles.stateTitle}>Không tải được lịch chạy</Text>
+            <Text style={styles.stateText}>{error}</Text>
+            <Pressable style={styles.retryButton} onPress={() => loadTrips('initial')}>
+              <Text style={styles.retryText}>Thử lại</Text>
+            </Pressable>
+          </View>
+        ) : routeGroups.length === 0 ? (
+          <View style={styles.stateCard}>
+            <Ionicons name="calendar-clear-outline" size={28} color={ACTIVE_COLOR} />
+            <Text style={styles.stateTitle}>Chưa có chuyến confirmed</Text>
+            <Text style={styles.stateText}>
+              Không có lịch chạy nào trong ngày {formatHeaderDate(scheduleDate)}.
+            </Text>
+          </View>
+        ) : (
+          routeGroups.map(group => (
+            <View key={group.key} style={styles.routeCard}>
+              <View style={styles.routeHeader}>
+                <View style={styles.routeCircle}>
+                  <Text style={styles.routeCircleSold}>{group.bookedSeats}</Text>
+                  <View style={styles.routeCircleDivider} />
+                  <Text style={styles.routeCircleTotal}>{group.totalSeats}</Text>
+                </View>
+                <View style={styles.routeInfo}>
+                  <Text style={styles.routeTitle}>{group.routeName}</Text>
+                  <Text style={styles.routeStats}>
+                    TT: <Text style={styles.boldText}>0</Text> ĐC:{' '}
+                    <Text style={styles.boldText}>{group.bookedSeats}</Text> Trống:{' '}
+                    <Text style={styles.boldText}>{group.availableSeats}</Text> Khóa tổng:{' '}
+                    <Text style={styles.boldText}>{group.lockedSeats}</Text>
+                  </Text>
+                </View>
+                <Ionicons name="chevron-up" size={24} color={ACTIVE_COLOR} />
               </View>
-              <View style={[styles.alertLevelWrap, { backgroundColor: toneColors[alert.tone].bg }] }>
-                <Ionicons name="warning-outline" size={12} color={toneColors[alert.tone].text} />
-                <Text style={[styles.alertLevel, { color: toneColors[alert.tone].text }]}>{alert.level}</Text>
+
+              <View style={styles.routeBodyHeader}>
+                <Text style={styles.tripCountText}>{group.trips.length} chuyến</Text>
+                <Pressable style={styles.addTripButton}>
+                  <Text style={styles.addTripText}>Tăng cường</Text>
+                  <Ionicons name="add" size={30} color={ACTIVE_COLOR} />
+                </Pressable>
               </View>
-              <Text style={styles.alertMessage}>{alert.message}</Text>
-              <Text style={styles.alertChannel}>{alert.channel}</Text>
+
+              <View style={styles.tripGrid}>
+                {group.trips.map(trip => (
+                  <View key={trip.id} style={styles.tripTile}>
+                    <View style={styles.tripTileTop}>
+                      <Text
+                        style={[
+                          styles.tripTime,
+                          isPastTrip(trip) && styles.tripTimePast,
+                        ]}
+                      >
+                        {formatTime(trip.departure_time)}
+                      </Text>
+                      <Text style={styles.tripSeats}>
+                        {trip.booked_seats}|{trip.available_seats}
+                      </Text>
+                    </View>
+                    <Text style={styles.tripRouteCode} numberOfLines={1}>
+                      {group.routeCode}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             </View>
-          ))}
-        </View>
+          ))
+        )}
       </ScrollView>
-    </ScreenContainer>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: APP_COLORS.background,
+  },
+  header: {
+    backgroundColor: APP_COLORS.primary,
+    paddingHorizontal: 20,
+    paddingTop: 34,
+    paddingBottom: 22,
+  },
+  headerTitle: {
+    color: APP_COLORS.surface,
+    fontSize: 24,
+    fontWeight: '700',
+  },
   contentContainer: {
     paddingBottom: 24,
-    gap: 12,
   },
-  heroCard: {
-    borderWidth: 1,
-    borderColor: APP_COLORS.border,
-    borderRadius: 12,
-    padding: 14,
-    backgroundColor: APP_COLORS.primaryLight,
+  dateRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  heroLabel: {
-    color: APP_COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  heroValue: {
-    color: APP_COLORS.primaryDark,
-    fontSize: 28,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  heroRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    alignItems: 'stretch',
+    marginHorizontal: 14,
+    marginTop: 12,
+    borderRadius: 9,
     backgroundColor: APP_COLORS.surface,
-    borderWidth: 1,
-    borderColor: APP_COLORS.border,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    shadowColor: APP_COLORS.textPrimary,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
-  heroChange: {
-    color: APP_COLORS.primaryDark,
-    fontSize: 12,
+  dateBox: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  dateText: {
+    color: APP_COLORS.textPrimary,
+    fontSize: 19,
     fontWeight: '700',
   },
-  quickActions: {
-    flexDirection: 'row',
-    gap: 8,
+  dateTripText: {
+    color: ACTIVE_COLOR,
+    fontSize: 17,
+    fontWeight: '700',
   },
-  quickAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: APP_COLORS.primaryLight,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  quickActionText: {
-    color: APP_COLORS.primaryDark,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  metricCard: {
-    width: '48%',
-    borderWidth: 1,
-    borderColor: APP_COLORS.border,
-    borderRadius: 12,
-    padding: 14,
-    backgroundColor: APP_COLORS.surface,
-  },
-  metricIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: APP_COLORS.primaryLight,
+  filterButton: {
+    width: 54,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    borderLeftWidth: 1,
+    borderLeftColor: APP_COLORS.border,
   },
-  metricValue: {
-    color: APP_COLORS.primaryDark,
-    fontSize: 21,
-    fontWeight: '700',
-  },
-  metricLabel: {
-    marginTop: 4,
-    color: APP_COLORS.textPrimary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  metricNote: {
-    marginTop: 2,
-    color: APP_COLORS.textSecondary,
-    fontSize: 12,
-  },
-  sectionCard: {
-    borderWidth: 1,
-    borderColor: APP_COLORS.border,
+  filterBadge: {
+    position: 'absolute',
+    top: 9,
+    right: 10,
+    width: 24,
+    height: 24,
     borderRadius: 12,
-    padding: 14,
-    backgroundColor: APP_COLORS.surface,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  sectionIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: APP_COLORS.primaryLight,
+    backgroundColor: ACTIVE_COLOR,
   },
-  sectionTitle: {
-    color: APP_COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  rowCard: {
-    backgroundColor: APP_COLORS.primaryLight,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
-  },
-  rowHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  rowTitle: {
-    color: APP_COLORS.textPrimary,
+  filterBadgeText: {
+    color: APP_COLORS.surface,
     fontSize: 14,
     fontWeight: '700',
   },
-  rowSeats: {
-    color: APP_COLORS.primaryDark,
-    fontSize: 13,
-    fontWeight: '700',
+  salesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingTop: 22,
+    paddingBottom: 16,
   },
-  rowSub: {
-    marginTop: 3,
-    color: APP_COLORS.textSecondary,
-    fontSize: 12,
+  salesText: {
+    flex: 1,
+    color: APP_COLORS.textPrimary,
+    fontSize: 18,
+    fontWeight: '500',
   },
-  rowStatusWrap: {
-    alignSelf: 'flex-start',
+  statsLink: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 6,
+  },
+  statsText: {
+    color: ACTIVE_COLOR,
+    fontSize: 18,
+    fontWeight: '500',
+  },
+  filterRow: {
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+  },
+  tuneIconWrap: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: APP_COLORS.border,
+    paddingRight: 10,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 36,
+    borderRadius: 5,
     backgroundColor: APP_COLORS.surface,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  rowStatus: {
-    color: APP_COLORS.primaryDark,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  alertCard: {
     borderWidth: 1,
     borderColor: APP_COLORS.border,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
+    paddingHorizontal: 12,
   },
-  alertHeader: {
+  filterChipActive: {
+    backgroundColor: APP_COLORS.primaryLight,
+  },
+  filterText: {
+    color: APP_COLORS.placeholder,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  filterTextActive: {
+    color: ACTIVE_COLOR,
+  },
+  routeCard: {
+    marginHorizontal: 14,
+    marginTop: 14,
+    borderRadius: 6,
+    backgroundColor: APP_COLORS.surface,
+    overflow: 'hidden',
+    shadowColor: APP_COLORS.textPrimary,
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
+  },
+  routeHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: APP_COLORS.border,
   },
-  alertVehicle: {
-    color: APP_COLORS.textPrimary,
-    fontSize: 13,
+  routeCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 7,
+    borderColor: APP_COLORS.primaryLight,
+  },
+  routeCircleSold: {
+    color: ACTIVE_COLOR,
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 22,
+  },
+  routeCircleDivider: {
+    width: 22,
+    height: 1,
+    backgroundColor: APP_COLORS.border,
+    marginVertical: 2,
+  },
+  routeCircleTotal: {
+    color: APP_COLORS.placeholder,
+    fontSize: 14,
+    fontWeight: '500',
+    lineHeight: 18,
+  },
+  routeInfo: {
+    flex: 1,
+  },
+  routeTitle: {
+    color: ACTIVE_COLOR,
+    fontSize: 21,
     fontWeight: '700',
   },
-  alertTime: {
-    color: APP_COLORS.textSecondary,
-    fontSize: 12,
+  routeStats: {
+    marginTop: 3,
+    color: APP_COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '400',
   },
-  alertLevelWrap: {
-    alignSelf: 'flex-start',
+  boldText: {
+    fontWeight: '700',
+  },
+  routeBodyHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    marginTop: 6,
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 8,
+  },
+  tripCountText: {
+    color: APP_COLORS.placeholder,
+    fontSize: 16,
+    fontWeight: '400',
+  },
+  addTripButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  addTripText: {
+    color: ACTIVE_COLOR,
+    fontSize: 17,
+    fontWeight: '500',
+  },
+  tripGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+  },
+  tripTile: {
+    width: '30.7%',
+    minHeight: 74,
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 5,
+    overflow: 'hidden',
+    backgroundColor: APP_COLORS.surface,
+  },
+  tripTileTop: {
+    minHeight: 31,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
     backgroundColor: APP_COLORS.primaryLight,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
+    paddingHorizontal: 7,
   },
-  alertLevel: {
-    color: APP_COLORS.primaryDark,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  alertMessage: {
-    marginTop: 2,
+  tripTime: {
     color: APP_COLORS.textPrimary,
-    fontSize: 12,
+    fontSize: 18,
+    fontWeight: '700',
   },
-  alertChannel: {
-    marginTop: 2,
+  tripTimePast: {
+    color: APP_COLORS.danger,
+  },
+  tripSeats: {
+    color: APP_COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  tripRouteCode: {
+    color: APP_COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+    paddingHorizontal: 7,
+    paddingTop: 9,
+  },
+  stateCard: {
+    alignItems: 'center',
+    marginHorizontal: 14,
+    marginTop: 18,
+    borderRadius: 8,
+    padding: 20,
+    backgroundColor: APP_COLORS.surface,
+    gap: 8,
+  },
+  stateTitle: {
+    color: APP_COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  stateText: {
     color: APP_COLORS.textSecondary,
-    fontSize: 12,
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 4,
+    borderRadius: 6,
+    backgroundColor: ACTIVE_COLOR,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  retryText: {
+    color: APP_COLORS.surface,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
