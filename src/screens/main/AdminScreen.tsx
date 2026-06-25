@@ -1,14 +1,15 @@
 import { ComponentProps } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
-import { useAppSelector } from '../../store/hooks';
+import { signOut } from '../../store/authSlice';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 type MenuItem = { label: string; icon: IconName };
 
 const programItems: MenuItem[] = [
-  { label: 'Giới thiệu Vexere, nhận hoa hồng', icon: 'megaphone-outline' },
+  { label: 'Giới thiệu An Nhiên, nhận hoa hồng', icon: 'megaphone-outline' },
   { label: 'Công cụ Marketing', icon: 'trending-up-outline' },
 ];
 
@@ -43,6 +44,7 @@ function MenuSection({ title, items }: { title: string; items: MenuItem[] }) {
 }
 
 export function AdminScreen() {
+  const dispatch = useAppDispatch();
   const user = useAppSelector(state => state.auth.user);
   const displayName = user?.full_name || user?.username || 'Quản trị viên';
 
@@ -61,6 +63,10 @@ export function AdminScreen() {
       <MenuSection title="Chương trình" items={programItems} />
       <MenuSection title="Danh mục" items={managementItems} />
       <MenuSection title="Cài đặt ứng dụng" items={settingsItems} />
+      <Pressable style={styles.signOutButton} onPress={() => dispatch(signOut())}>
+        <Ionicons name="log-out-outline" size={20} color={APP_COLORS.danger} />
+        <Text style={styles.signOutText}>Đăng xuất</Text>
+      </Pressable>
       <Text style={styles.version}>Phiên bản 1.8.6 (v193)</Text>
     </ScrollView>
   );
@@ -124,6 +130,24 @@ const styles = StyleSheet.create({
     color: APP_COLORS.textPrimary,
     fontSize: 18,
     lineHeight: 24,
+  },
+  signOutButton: {
+    minHeight: 54,
+    marginHorizontal: 20,
+    marginTop: 20,
+    borderWidth: 1,
+    borderColor: APP_COLORS.dangerLight,
+    borderRadius: 10,
+    backgroundColor: APP_COLORS.dangerLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  signOutText: {
+    color: APP_COLORS.danger,
+    fontSize: 16,
+    fontWeight: '700',
   },
   version: {
     paddingVertical: 28,
