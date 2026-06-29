@@ -8,6 +8,7 @@ type UserPermissions = Record<string, boolean>;
 type UserPhoneProfile = {
   phone?: string;
   phone_number?: string;
+  role?: string;
 };
 
 export type AuthUser = {
@@ -101,6 +102,10 @@ function normalizeProfileUser(response: unknown): AuthUser | null {
   const data = response as Record<string, unknown>;
   const id = typeof data.id === 'number' ? data.id : data.user_id;
   const username = data.username;
+  const userRole =
+    data.user_role && typeof data.user_role === 'object'
+      ? (data.user_role as Record<string, unknown>)
+      : undefined;
 
   if (typeof id !== 'number' || typeof username !== 'string') {
     return null;
@@ -126,6 +131,17 @@ function normalizeProfileUser(response: unknown): AuthUser | null {
     is_staff: typeof data.is_staff === 'boolean' ? data.is_staff : undefined,
     is_active:
       typeof data.is_active === 'boolean' ? data.is_active : undefined,
+    user_role: userRole
+      ? {
+          role: typeof userRole.role === 'string' ? userRole.role : undefined,
+          phone:
+            typeof userRole.phone === 'string' ? userRole.phone : undefined,
+          phone_number:
+            typeof userRole.phone_number === 'string'
+              ? userRole.phone_number
+              : undefined,
+        }
+      : undefined,
   };
 }
 

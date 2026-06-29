@@ -12,6 +12,8 @@ import { CustomerHomeScreen } from '../screens/main/CustomerHomeScreen';
 import { CustomerNotificationsScreen } from '../screens/main/CustomerNotificationsScreen';
 import { CustomerTicketScreen } from '../screens/main/CustomerTicketScreen';
 import { DashboardScreen } from '../screens/main/DashboardScreen';
+import { DriverCargoScreen } from '../screens/main/DriverCargoScreen';
+import { DriverTripsScreen } from '../screens/main/DriverTripsScreen';
 import { MaintenanceScreen } from '../screens/main/MaintenanceScreen';
 import { PassengersScreen } from '../screens/main/PassengersScreen';
 import { APP_COLORS } from '../theme/colors';
@@ -44,8 +46,9 @@ const menuIcon = createTabBarIcon('menu', 'menu-outline');
 
 export function MainTabs() {
   const user = useAppSelector(state => state.auth.user);
-  const role = (user?.role || '').toLowerCase();
+  const role = (user?.user_role?.role || user?.role || '').toLowerCase();
   const isAdmin = role === 'admin';
+  const isDriver = role === 'driver' || role === 'taixe' || role === 'tai_xe';
   const isCallCenter = role === 'callcenter' || role === 'call_center' || role === 'tongdai' || role === 'tong_dai';
   const isCustomer =
     role === 'customer' ||
@@ -147,8 +150,11 @@ export function MainTabs() {
     >
       <Tab.Screen
         name="Dashboard"
-        component={DashboardScreen}
-        options={{ title: 'Trang chủ', tabBarIcon: dashboardIcon }}
+        component={isDriver ? DriverTripsScreen : DashboardScreen}
+        options={{
+          title: isDriver ? 'Chuyến của tôi' : 'Trang chủ',
+          tabBarIcon: dashboardIcon,
+        }}
       />
       {isCallCenter ? (
         <Tab.Screen
@@ -159,7 +165,7 @@ export function MainTabs() {
       ) : null}
       <Tab.Screen
         name="Cargo"
-        component={CargoScreen}
+        component={isDriver ? DriverCargoScreen : CargoScreen}
         options={{ title: 'Hàng hoá', tabBarIcon: cargoIcon }}
       />
       <Tab.Screen
@@ -167,11 +173,13 @@ export function MainTabs() {
         component={MaintenanceScreen}
         options={{ title: 'Bảo dưỡng', tabBarIcon: maintenanceIcon }}
       />
-      <Tab.Screen
-        name="CallCenter"
-        component={CallCenterScreen}
-        options={{ title: 'Tổng Đài', tabBarIcon: callCenterIcon }}
-      />
+      {!isDriver ? (
+        <Tab.Screen
+          name="CallCenter"
+          component={CallCenterScreen}
+          options={{ title: 'Tổng Đài', tabBarIcon: callCenterIcon }}
+        />
+      ) : null}
       <Tab.Screen
         name="Account"
         component={AccountScreen}
