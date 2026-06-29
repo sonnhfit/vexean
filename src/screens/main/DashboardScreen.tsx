@@ -17,7 +17,11 @@ import Ionicons from '@react-native-vector-icons/ionicons';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
-import { CreateTripModal } from './CreateTripModal';
+import {
+  CreateTripModal,
+  TripSelectionField,
+  TripSelectOption,
+} from './CreateTripModal';
 import { requestJson } from '../../services/apiClient';
 import { useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
@@ -63,6 +67,25 @@ type OdooTripSummary = {
 
 type TripsResponse = {
   results?: OdooTripSummary[];
+};
+
+type OdooVehicleOption = {
+  id: number;
+  name?: string;
+  license_plate?: string;
+  vehicle_type?: string;
+  capacity?: number;
+};
+
+type OdooDriverOption = {
+  id: number;
+  name: string;
+  phone?: string;
+  license_number?: string;
+};
+
+type OptionListResponse<T> = {
+  results?: T[];
 };
 
 type ReinforceTripPayload = {
@@ -338,6 +361,32 @@ function buildFilterOptions(
   );
 }
 
+function mapVehicleOptions(vehicles: OdooVehicleOption[]): TripSelectOption[] {
+  return vehicles.map(vehicle => ({
+    id: vehicle.id,
+    label: vehicle.license_plate || vehicle.name || `Xe #${vehicle.id}`,
+    description: [
+      vehicle.vehicle_type,
+      vehicle.capacity ? `${vehicle.capacity} ghế` : '',
+    ]
+      .filter(Boolean)
+      .join(' • '),
+  }));
+}
+
+function mapDriverOptions(drivers: OdooDriverOption[]): TripSelectOption[] {
+  return drivers.map(driver => ({
+    id: driver.id,
+    label: driver.name,
+    description: [
+      driver.phone,
+      driver.license_number ? `GPLX ${driver.license_number}` : '',
+    ]
+      .filter(Boolean)
+      .join(' • '),
+  }));
+}
+
 function FilterChip({
   label,
   active,
@@ -397,6 +446,21 @@ export function DashboardScreen() {
   const [reinforceVehicleId, setReinforceVehicleId] = useState('');
   const [reinforceDriverId, setReinforceDriverId] = useState('');
   const [reinforceCoDriverId, setReinforceCoDriverId] = useState('');
+  const [reinforceVehicleOptions, setReinforceVehicleOptions] = useState<
+    TripSelectOption[]
+  >([]);
+  const [reinforceDriverOptions, setReinforceDriverOptions] = useState<
+    TripSelectOption[]
+  >([]);
+  const [reinforceCoDriverOptions, setReinforceCoDriverOptions] = useState<
+    TripSelectOption[]
+  >([]);
+  const [reinforceOptionsLoading, setReinforceOptionsLoading] = useState(false);
+  const [reinforceCoDriversLoading, setReinforceCoDriversLoading] =
+    useState(false);
+  const [reinforceOptionsError, setReinforceOptionsError] = useState<
+    string | null
+  >(null);
   const [reinforceState, setReinforceState] = useState<'draft' | 'confirmed'>(
     'confirmed',
   );
@@ -572,6 +636,36 @@ export function DashboardScreen() {
     });
   };
 
+  const loadReinforceOptions = useCallback(async () => {
+    setReinforceOptionsLoading(true);
+    setReinforceOptionsError(null);
+    try {
+      const [vehicleData, driverData] = await Promise.all([
+        requestJson<OptionListResponse<OdooVehicleOption>>(
+          '/api/nhaxe/odoo/vehicles/?active=true&limit=200',
+          { method: 'GET', auth: true, logLabel: 'reinforce-vehicles' },
+        ),
+        requestJson<OptionListResponse<OdooDriverOption>>(
+          '/api/nhaxe/odoo/drivers/?active=true&limit=200',
+          { method: 'GET', auth: true, logLabel: 'reinforce-drivers' },
+        ),
+      ]);
+
+      setReinforceVehicleOptions(
+        mapVehicleOptions(vehicleData.results || []),
+      );
+      setReinforceDriverOptions(mapDriverOptions(driverData.results || []));
+    } catch (optionError) {
+      setReinforceOptionsError(
+        optionError instanceof Error
+          ? optionError.message
+          : 'Không tải được danh sách xe và tài xế.',
+      );
+    } finally {
+      setReinforceOptionsLoading(false);
+    }
+  }, []);
+
   const openReinforceModal = (group: RouteGroup) => {
     const sourceTrip = group.trips[0];
     if (!sourceTrip) {
@@ -589,7 +683,61 @@ export function DashboardScreen() {
     setReinforceNote('Chuyến tăng cường');
     setDateTimePicker(null);
     setReinforceError(null);
+    loadReinforceOptions();
   };
+
+  useEffect(() => {
+    if (!reinforceGroup) {
+      return;
+    }
+
+    const selectedDriverId = Number(reinforceDriverId);
+    const sourceTrip =
+      reinforceGroup.trips.find(trip => trip.id === reinforceSourceTripId) ||
+      reinforceGroup.trips[0];
+    const inheritedDriverId = sourceTrip?.driver?.id;
+    const excludedDriverId =
+      Number.isInteger(selectedDriverId) && selectedDriverId > 0
+        ? selectedDriverId
+        : inheritedDriverId;
+    const excludeQuery = excludedDriverId
+      ? `&exclude_driver_id=${excludedDriverId}`
+      : '';
+
+    let active = true;
+    setReinforceCoDriversLoading(true);
+    requestJson<OptionListResponse<OdooDriverOption>>(
+      `/api/nhaxe/odoo/co-drivers/?active=true${excludeQuery}&limit=200`,
+      { method: 'GET', auth: true, logLabel: 'reinforce-co-drivers' },
+    )
+      .then(data => {
+        if (active) {
+          setReinforceCoDriverOptions(
+            mapDriverOptions(data.results || []),
+          );
+          setReinforceCoDriverId('');
+          setReinforceOptionsError(null);
+        }
+      })
+      .catch(optionError => {
+        if (active) {
+          setReinforceOptionsError(
+            optionError instanceof Error
+              ? optionError.message
+              : 'Không tải được danh sách phụ xe.',
+          );
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setReinforceCoDriversLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [reinforceDriverId, reinforceGroup, reinforceSourceTripId]);
 
   const closeReinforceModal = () => {
     if (reinforceSubmitting) {
@@ -600,6 +748,7 @@ export function DashboardScreen() {
     setReinforceSourceTripId(null);
     setDateTimePicker(null);
     setReinforceError(null);
+    setReinforceOptionsError(null);
   };
 
   const reinforceSourceTrip = useMemo(
@@ -1229,40 +1378,68 @@ export function DashboardScreen() {
                 ) : null}
               </View>
 
-              <View style={styles.fieldGrid}>
-                <View style={styles.fieldHalf}>
-                  <Text style={styles.fieldLabel}>ID xe</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={reinforceVehicleId}
-                    onChangeText={setReinforceVehicleId}
-                    placeholder="Dùng xe gốc"
-                    placeholderTextColor={APP_COLORS.placeholder}
-                    keyboardType="number-pad"
+              {reinforceOptionsError ? (
+                <View style={styles.formError}>
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={16}
+                    color={APP_COLORS.danger}
                   />
+                  <Text style={styles.formErrorText}>
+                    {reinforceOptionsError}
+                  </Text>
                 </View>
-                <View style={styles.fieldHalf}>
-                  <Text style={styles.fieldLabel}>ID tài xế</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={reinforceDriverId}
-                    onChangeText={setReinforceDriverId}
-                    placeholder="Dùng tài xế gốc"
-                    placeholderTextColor={APP_COLORS.placeholder}
-                    keyboardType="number-pad"
-                  />
-                </View>
-              </View>
+              ) : null}
 
-              <Text style={styles.fieldLabel}>ID phụ xe</Text>
-              <TextInput
-                style={styles.textInput}
-                value={reinforceCoDriverId}
-                onChangeText={setReinforceCoDriverId}
-                placeholder="Để trống dùng chuyến gốc, nhập null để bỏ"
-                placeholderTextColor={APP_COLORS.placeholder}
-                autoCapitalize="none"
+              <TripSelectionField
+                label="Xe"
+                placeholder="Dùng xe của chuyến gốc"
+                options={reinforceVehicleOptions}
+                selectedId={Number(reinforceVehicleId) || null}
+                loading={reinforceOptionsLoading}
+                optional
+                emptyLabel="Dùng xe của chuyến gốc"
+                onSelect={id => setReinforceVehicleId(id ? String(id) : '')}
               />
+              <TripSelectionField
+                label="Tài xế chính"
+                placeholder="Dùng tài xế của chuyến gốc"
+                options={reinforceDriverOptions}
+                selectedId={Number(reinforceDriverId) || null}
+                loading={reinforceOptionsLoading}
+                optional
+                emptyLabel="Dùng tài xế của chuyến gốc"
+                onSelect={id => setReinforceDriverId(id ? String(id) : '')}
+              />
+              <TripSelectionField
+                label="Phụ xe"
+                placeholder="Dùng phụ xe của chuyến gốc"
+                options={reinforceCoDriverOptions}
+                selectedId={Number(reinforceCoDriverId) || null}
+                loading={
+                  reinforceOptionsLoading || reinforceCoDriversLoading
+                }
+                optional
+                emptyLabel="Dùng phụ xe của chuyến gốc"
+                onSelect={id => setReinforceCoDriverId(id ? String(id) : '')}
+              />
+              <Pressable
+                style={[
+                  styles.removeCoDriverButton,
+                  reinforceCoDriverId === 'null' &&
+                    styles.removeCoDriverButtonActive,
+                ]}
+                onPress={() => setReinforceCoDriverId('null')}
+              >
+                <Ionicons
+                  name="person-remove-outline"
+                  size={17}
+                  color={APP_COLORS.danger}
+                />
+                <Text style={styles.removeCoDriverText}>
+                  Không gán phụ xe cho chuyến tăng cường
+                </Text>
+              </Pressable>
 
               <Text style={styles.fieldLabel}>Trạng thái</Text>
               <View style={styles.segmented}>
@@ -1839,13 +2016,26 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     textAlignVertical: 'top',
   },
-  fieldGrid: {
+  removeCoDriverButton: {
+    minHeight: 42,
     flexDirection: 'row',
-    gap: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    borderWidth: 1,
+    borderColor: APP_COLORS.dangerLight,
+    borderRadius: 8,
+    backgroundColor: APP_COLORS.surface,
+    paddingHorizontal: 12,
   },
-  fieldHalf: {
-    flex: 1,
-    gap: 8,
+  removeCoDriverButtonActive: {
+    borderColor: APP_COLORS.danger,
+    backgroundColor: APP_COLORS.dangerLight,
+  },
+  removeCoDriverText: {
+    color: APP_COLORS.danger,
+    fontSize: 12,
+    fontWeight: '700',
   },
   segmented: {
     flexDirection: 'row',

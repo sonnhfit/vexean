@@ -60,7 +60,7 @@ type OdooDriver = {
 
 type ListResponse<T> = { results?: T[] } | T[];
 
-type SelectOption = {
+export type TripSelectOption = {
   id: number;
   label: string;
   description?: string;
@@ -359,7 +359,7 @@ export function CreateTripModal({
     }
   };
 
-  const routeOptions: SelectOption[] = routes.map(route => ({
+  const routeOptions: TripSelectOption[] = routes.map(route => ({
     id: route.id,
     label:
       route.origin && route.destination
@@ -372,7 +372,7 @@ export function CreateTripModal({
       .filter(Boolean)
       .join(' • '),
   }));
-  const vehicleOptions: SelectOption[] = vehicles.map(vehicle => ({
+  const vehicleOptions: TripSelectOption[] = vehicles.map(vehicle => ({
     id: vehicle.id,
     label: vehicle.license_plate || vehicle.name || `Xe #${vehicle.id}`,
     description: [
@@ -382,7 +382,7 @@ export function CreateTripModal({
       .filter(Boolean)
       .join(' • '),
   }));
-  const driverOptions: SelectOption[] = drivers.map(driver => ({
+  const driverOptions: TripSelectOption[] = drivers.map(driver => ({
     id: driver.id,
     label: driver.name,
     description: [
@@ -392,7 +392,7 @@ export function CreateTripModal({
       .filter(Boolean)
       .join(' • '),
   }));
-  const coDriverOptions: SelectOption[] = coDrivers.map(driver => ({
+  const coDriverOptions: TripSelectOption[] = coDrivers.map(driver => ({
     id: driver.id,
     label: driver.name,
     description: driver.phone,
@@ -447,7 +447,7 @@ export function CreateTripModal({
               </View>
             ) : null}
 
-            <SelectionField
+            <TripSelectionField
               label="Tuyến đường *"
               placeholder="Chọn tuyến đường"
               options={routeOptions}
@@ -461,7 +461,7 @@ export function CreateTripModal({
                 }
               }}
             />
-            <SelectionField
+            <TripSelectionField
               label="Xe *"
               placeholder="Chọn xe"
               options={vehicleOptions}
@@ -469,7 +469,7 @@ export function CreateTripModal({
               loading={optionsLoading}
               onSelect={setVehicleId}
             />
-            <SelectionField
+            <TripSelectionField
               label="Tài xế chính *"
               placeholder="Chọn tài xế"
               options={driverOptions}
@@ -477,7 +477,7 @@ export function CreateTripModal({
               loading={optionsLoading}
               onSelect={setDriverId}
             />
-            <SelectionField
+            <TripSelectionField
               label="Phụ xe"
               placeholder={
                 driverId
@@ -489,6 +489,7 @@ export function CreateTripModal({
               loading={coDriversLoading}
               disabled={!driverId}
               optional
+              emptyLabel="Không chọn phụ xe"
               onSelect={setCoDriverId}
             />
 
@@ -597,7 +598,7 @@ export function CreateTripModal({
   );
 }
 
-function SelectionField({
+export function TripSelectionField({
   label,
   placeholder,
   options,
@@ -605,15 +606,17 @@ function SelectionField({
   loading,
   disabled,
   optional,
+  emptyLabel,
   onSelect,
 }: {
   label: string;
   placeholder: string;
-  options: SelectOption[];
+  options: TripSelectOption[];
   selectedId: number | null;
   loading?: boolean;
   disabled?: boolean;
   optional?: boolean;
+  emptyLabel?: string;
   onSelect: (id: number | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -697,7 +700,9 @@ function SelectionField({
                   setSearch('');
                 }}
               >
-                <Text style={styles.optionLabel}>Không chọn phụ xe</Text>
+                <Text style={styles.optionLabel}>
+                  {emptyLabel || 'Không chọn'}
+                </Text>
               </Pressable>
             ) : null}
             {filteredOptions.length === 0 ? (
