@@ -17,7 +17,9 @@ import Ionicons from '@react-native-vector-icons/ionicons';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { CreateTripModal } from './CreateTripModal';
 import { requestJson } from '../../services/apiClient';
+import { useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
@@ -98,7 +100,7 @@ type DateTimePickerState = {
 } | null;
 
 const ACTIVE_COLOR = APP_COLORS.primaryDark;
-const TRIP_STATES = 'confirmed';
+const TRIP_STATES = 'draft,confirmed';
 const TRIP_LIMIT = '50';
 
 function formatQueryDate(date: Date) {
@@ -372,11 +374,15 @@ function FilterChip({
 }
 
 export function DashboardScreen() {
+  const user = useAppSelector(state => state.auth.user);
+  const role = (user?.user_role?.role || user?.role || '').toLowerCase();
+  const isAdmin = role === 'admin';
   const [trips, setTrips] = useState<OdooTripSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scheduleDate] = useState(() => formatQueryDate(new Date()));
+  const [createTripVisible, setCreateTripVisible] = useState(false);
   const [groupEnabled, setGroupEnabled] = useState(true);
   const [activeFilterKind, setActiveFilterKind] = useState<FilterKind | null>(null);
   const [selectedRouteKey, setSelectedRouteKey] = useState<string | null>(null);
@@ -762,6 +768,18 @@ export function DashboardScreen() {
           />
         }
       >
+        {isAdmin ? (
+          <View style={styles.createTripRow}>
+            <Pressable
+              style={styles.createTripButton}
+              onPress={() => setCreateTripVisible(true)}
+            >
+              <Ionicons name="add-circle-outline" size={20} color={APP_COLORS.surface} />
+              <Text style={styles.createTripButtonText}>Thêm chuyến</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={styles.dateRow}>
           <View style={styles.dateBox}>
             <Text style={styles.dateText}>
@@ -1009,6 +1027,16 @@ export function DashboardScreen() {
           })
         )}
       </ScrollView>
+
+      <CreateTripModal
+        visible={createTripVisible}
+        initialDate={scheduleDate}
+        onClose={() => setCreateTripVisible(false)}
+        onCreated={() => {
+          setCreateTripVisible(false);
+          loadTrips('initial');
+        }}
+      />
 
       <Modal
         visible={Boolean(reinforceGroup)}
@@ -1329,6 +1357,25 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingBottom: 24,
+  },
+  createTripRow: {
+    alignItems: 'flex-end',
+    paddingHorizontal: 14,
+    paddingTop: 12,
+  },
+  createTripButton: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 9,
+    backgroundColor: ACTIVE_COLOR,
+    paddingHorizontal: 15,
+  },
+  createTripButtonText: {
+    color: APP_COLORS.surface,
+    fontSize: 14,
+    fontWeight: '700',
   },
   dateRow: {
     flexDirection: 'row',
