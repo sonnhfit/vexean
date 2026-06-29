@@ -45,6 +45,8 @@ type TripsResponse = { results?: Trip[] };
 type SeatsResponse = Seat[] | { results?: Seat[]; seats?: Seat[] };
 type BookingResponse = { total_tickets?: number; tickets?: { name?: string }[] };
 
+const QUICK_NOTES = ['Khách sinh viên', 'Khách bệnh viện K', 'Khách khứ hồi'];
+
 function localDate(date: Date) {
   const timezoneOffset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 10);
@@ -314,6 +316,23 @@ export function AdminBookingScreen() {
               <Text style={styles.modalLabel}>Thông tin khách</Text>
               <TextInput value={passengerName} onChangeText={setPassengerName} placeholder="Tên khách (có thể bỏ trống)" placeholderTextColor={APP_COLORS.placeholder} style={styles.input} />
               <TextInput value={passengerPhone} onChangeText={setPassengerPhone} placeholder="Số điện thoại" placeholderTextColor={APP_COLORS.placeholder} keyboardType="phone-pad" style={styles.input} />
+              <Text style={styles.modalLabel}>Ghi chú</Text>
+              <View style={styles.quickNoteList}>
+                {QUICK_NOTES.map(quickNote => {
+                  const selected = note === quickNote;
+                  return (
+                    <Pressable
+                      key={quickNote}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      onPress={() => setNote(quickNote)}
+                      style={[styles.quickNote, selected && styles.quickNoteSelected]}
+                    >
+                      <Text style={[styles.quickNoteText, selected && styles.quickNoteTextSelected]}>{quickNote}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
               <TextInput value={note} onChangeText={setNote} placeholder="Ghi chú" placeholderTextColor={APP_COLORS.placeholder} style={[styles.input, styles.noteInput]} multiline />
               {bookingError ? <Text style={styles.bookingError}>{bookingError}</Text> : null}
             </ScrollView>
@@ -347,4 +366,9 @@ const styles = StyleSheet.create({
   driver: { width: '30%', aspectRatio: 1, borderRadius: 10, backgroundColor: '#d8e4e3', alignItems: 'center', justifyContent: 'center' }, driverText: { color: APP_COLORS.textPrimary, fontSize: 13, fontWeight: '800' },
   seat: { width: '30%', aspectRatio: 1, borderWidth: 2, borderRadius: 10, backgroundColor: APP_COLORS.surface, alignItems: 'center', justifyContent: 'center' }, seatLabel: { fontSize: 20, fontWeight: '800' }, seatPrice: { marginTop: 3, fontSize: 10, color: APP_COLORS.textSecondary, fontWeight: '600' },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.38)' }, modalBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }, modalCard: { maxHeight: '88%', padding: 20, paddingBottom: 16, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: APP_COLORS.surface }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }, modalTitle: { color: APP_COLORS.textPrimary, fontSize: 21, fontWeight: '800' }, modalSubTitle: { marginTop: 4, color: APP_COLORS.textSecondary, fontSize: 13 }, modalLabel: { marginBottom: 9, color: APP_COLORS.textPrimary, fontSize: 15, fontWeight: '700' }, modalSeats: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }, modalSeat: { width: '31%', minHeight: 56, padding: 6, borderRadius: 9, borderWidth: 1, borderColor: APP_COLORS.success, justifyContent: 'center', alignItems: 'center' }, modalSeatSelected: { backgroundColor: APP_COLORS.primaryDark, borderColor: APP_COLORS.primaryDark }, modalSeatName: { color: APP_COLORS.success, fontWeight: '800' }, modalSeatPrice: { marginTop: 2, color: APP_COLORS.textSecondary, fontSize: 10 }, modalSeatTextSelected: { color: APP_COLORS.surface }, input: { minHeight: 48, marginBottom: 10, paddingHorizontal: 13, borderWidth: 1, borderColor: APP_COLORS.border, borderRadius: 10, color: APP_COLORS.textPrimary, backgroundColor: APP_COLORS.background }, noteInput: { minHeight: 70, paddingTop: 12, textAlignVertical: 'top' }, bookingError: { marginBottom: 8, color: APP_COLORS.danger, fontSize: 13 }, modalFooter: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: APP_COLORS.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, footerSeats: { maxWidth: 190, color: APP_COLORS.textSecondary, fontSize: 12 }, footerTotal: { marginTop: 4, color: APP_COLORS.textPrimary, fontSize: 15, fontWeight: '800' }, confirmButton: { minWidth: 106, minHeight: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, backgroundColor: APP_COLORS.primaryDark }, confirmButtonText: { color: APP_COLORS.surface, fontWeight: '800' }, disabledButton: { opacity: 0.5 },
+  quickNoteList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  quickNote: { minHeight: 38, paddingHorizontal: 12, borderWidth: 1, borderColor: APP_COLORS.border, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: APP_COLORS.surface },
+  quickNoteSelected: { borderColor: APP_COLORS.primaryDark, backgroundColor: APP_COLORS.primaryLight },
+  quickNoteText: { color: APP_COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
+  quickNoteTextSelected: { color: APP_COLORS.primaryDark, fontWeight: '700' },
 });
