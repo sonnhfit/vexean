@@ -7,12 +7,12 @@ import { AdminScreen } from '../screens/main/AdminScreen';
 import { AdminBookingScreen } from '../screens/main/AdminBookingScreen';
 import { CallCenterScreen } from '../screens/main/CallCenterScreen';
 import { CargoScreen } from '../screens/main/CargoScreen';
+import { CargoBookingsScreen } from '../screens/main/CargoBookingsScreen';
 import { CustomerFavoritesScreen } from '../screens/main/CustomerFavoritesScreen';
 import { CustomerHomeScreen } from '../screens/main/CustomerHomeScreen';
 import { CustomerNotificationsScreen } from '../screens/main/CustomerNotificationsScreen';
 import { CustomerTicketScreen } from '../screens/main/CustomerTicketScreen';
 import { DashboardScreen } from '../screens/main/DashboardScreen';
-import { DriverCargoScreen } from '../screens/main/DriverCargoScreen';
 import { DriverTripsScreen } from '../screens/main/DriverTripsScreen';
 import { MaintenanceScreen } from '../screens/main/MaintenanceScreen';
 import { PassengersScreen } from '../screens/main/PassengersScreen';
@@ -88,6 +88,11 @@ export function MainTabs() {
           options={{ title: 'Đơn hàng', tabBarIcon: customerOrdersIcon }}
         />
         <Tab.Screen
+          name="Cargo"
+          component={CargoBookingsScreen}
+          options={{ title: 'Hàng hoá', tabBarIcon: cargoIcon }}
+        />
+        <Tab.Screen
           name="CustomerFavorites"
           component={CustomerFavoritesScreen}
           options={{ title: 'Yêu thích', tabBarIcon: customerFavoritesIcon }}
@@ -128,6 +133,7 @@ export function MainTabs() {
         <Tab.Screen name="CallCenter" component={AdminBookingScreen} options={{ title: 'Đặt vé', tabBarIcon: ticketBookingIcon }} />
         <Tab.Screen name="CustomerOrders" component={CustomerTicketScreen} options={{ title: 'Vé nhận', tabBarIcon: ticketReceivedIcon }} />
         <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Lịch chạy', headerShown: false, tabBarIcon: scheduleIcon }} />
+        <Tab.Screen name="Cargo" component={CargoBookingsScreen} options={{ title: 'Hàng hoá', headerShown: false, tabBarIcon: cargoIcon }} />
         <Tab.Screen name="CustomerNotifications" component={CustomerNotificationsScreen} options={{ title: 'Thông báo', tabBarIcon: customerNotificationsIcon }} />
         <Tab.Screen name="Admin" component={AdminScreen} options={{ title: 'Menu', tabBarIcon: menuIcon }} />
       </Tab.Navigator>
@@ -165,8 +171,8 @@ export function MainTabs() {
       ) : null}
       <Tab.Screen
         name="Cargo"
-        component={isDriver ? DriverCargoScreen : CargoScreen}
-        options={{ title: 'Hàng hoá', tabBarIcon: cargoIcon }}
+        component={isDriver ? CargoBookingsScreen : CargoScreen}
+        options={{ title: 'Hàng hoá', headerShown: !isDriver, tabBarIcon: cargoIcon }}
       />
       <Tab.Screen
         name="Maintenance"

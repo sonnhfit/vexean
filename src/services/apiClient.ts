@@ -141,6 +141,13 @@ function extractApiErrorMessage(responseBody: unknown) {
     return data.error;
   }
 
+  if (data.error && typeof data.error === 'object') {
+    const apiError = data.error as Record<string, unknown>;
+    if (typeof apiError.message === 'string') {
+      return apiError.message;
+    }
+  }
+
   if (
     Array.isArray(data.non_field_errors) &&
     typeof data.non_field_errors[0] === 'string'

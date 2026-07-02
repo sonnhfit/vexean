@@ -1,56 +1,71 @@
 import { ComponentProps } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
 import { signOut } from '../../store/authSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
+import { RootStackParamList } from '../../types/navigation';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
-type MenuItem = { label: string; icon: IconName };
+type AdminSection = RootStackParamList['AdminMenuDetail']['section'];
+type MenuItem = { label: string; icon: IconName; screen?: keyof RootStackParamList; section?: AdminSection };
+type RootNavigation = NativeStackNavigationProp<RootStackParamList>;
 
 const programItems: MenuItem[] = [
-  { label: 'Giới thiệu An Nhiên, nhận hoa hồng', icon: 'megaphone-outline' },
-  { label: 'Công cụ Marketing', icon: 'trending-up-outline' },
+  { label: 'Giới thiệu An Nhiên, nhận hoa hồng', icon: 'megaphone-outline', section: 'referral' },
+  { label: 'Công cụ Marketing', icon: 'trending-up-outline', section: 'marketing' },
 ];
 
 const managementItems: MenuItem[] = [
-  { label: 'Điều hành xe trung chuyển', icon: 'car-outline' },
-  { label: 'Quản lý nhân sự', icon: 'person-outline' },
-  { label: 'Quản lý khách hàng', icon: 'people-outline' },
-  { label: 'Quản lý đánh giá', icon: 'chatbox-ellipses-outline' },
-  { label: 'Quản lý', icon: 'newspaper-outline' },
-  { label: 'Quản lý ứng dụng hành khách', icon: 'shapes-outline' },
+  { label: 'Điều hành xe trung chuyển', icon: 'car-outline', screen: 'FleetManagement' },
+  { label: 'Quản lý nhân sự', icon: 'person-outline', screen: 'DriverManagement' },
+  { label: 'Quản lý khách hàng', icon: 'people-outline', screen: 'Passengers' },
+  { label: 'Quản lý đánh giá', icon: 'chatbox-ellipses-outline', section: 'reviews' },
+  { label: 'Quản lý', icon: 'newspaper-outline', section: 'management' },
+  { label: 'Quản lý ứng dụng hành khách', icon: 'shapes-outline', section: 'passengerApp' },
 ];
 
 const settingsItems: MenuItem[] = [
-  { label: 'Cài đặt ứng dụng', icon: 'apps-outline' },
-  { label: 'Cài đặt chung', icon: 'settings-outline' },
-  { label: 'Cài đặt hệ thống', icon: 'cog-outline' },
+  { label: 'Cài đặt ứng dụng', icon: 'apps-outline', section: 'appSettings' },
+  { label: 'Cài đặt chung', icon: 'settings-outline', section: 'generalSettings' },
+  { label: 'Cài đặt hệ thống', icon: 'cog-outline', section: 'systemSettings' },
 ];
 
-function MenuSection({ title, items }: { title: string; items: MenuItem[] }) {
+function MenuSection({ title, items, onPress }: { title: string; items: MenuItem[]; onPress: (item: MenuItem) => void }) {
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
       {items.map(item => (
-        <View key={item.label} style={styles.menuRow}>
+        <Pressable key={item.label} style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]} onPress={() => onPress(item)}>
           <Ionicons name={item.icon} size={27} color={APP_COLORS.primaryDark} />
           <Text style={styles.menuLabel}>{item.label}</Text>
           <Ionicons name="chevron-forward" size={24} color={APP_COLORS.textPrimary} />
-        </View>
+        </Pressable>
       ))}
     </View>
   );
 }
 
 export function AdminScreen() {
+  const navigation = useNavigation<RootNavigation>();
   const dispatch = useAppDispatch();
   const user = useAppSelector(state => state.auth.user);
   const displayName = user?.full_name || user?.username || 'Quản trị viên';
+  const openMenuItem = (item: MenuItem) => {
+    if (item.section) {
+      navigation.navigate('AdminMenuDetail', { section: item.section });
+      return;
+    }
+    if (item.screen === 'FleetManagement' || item.screen === 'DriverManagement' || item.screen === 'Passengers') {
+      navigation.navigate(item.screen);
+    }
+  };
 
   return (
     <ScrollView style={styles.screen} showsVerticalScrollIndicator={false}>
-      <View style={styles.profileRow}>
+      <Pressable style={({ pressed }) => [styles.profileRow, pressed && styles.menuRowPressed]} onPress={() => navigation.navigate('Profile')}>
         <View style={styles.avatar}>
           <Ionicons name="person" size={42} color={APP_COLORS.surface} />
         </View>
@@ -58,11 +73,12 @@ export function AdminScreen() {
           <Text style={styles.role}>Chủ xe</Text>
           <Text style={styles.profileName} numberOfLines={1}>{displayName}</Text>
         </View>
-      </View>
+        <Ionicons name="chevron-forward" size={24} color={APP_COLORS.textSecondary} />
+      </Pressable>
 
-      <MenuSection title="Chương trình" items={programItems} />
-      <MenuSection title="Danh mục" items={managementItems} />
-      <MenuSection title="Cài đặt ứng dụng" items={settingsItems} />
+      <MenuSection title="Chương trình" items={programItems} onPress={openMenuItem} />
+      <MenuSection title="Danh mục" items={managementItems} onPress={openMenuItem} />
+      <MenuSection title="Cài đặt ứng dụng" items={settingsItems} onPress={openMenuItem} />
       <Pressable style={styles.signOutButton} onPress={() => dispatch(signOut())}>
         <Ionicons name="log-out-outline" size={20} color={APP_COLORS.danger} />
         <Text style={styles.signOutText}>Đăng xuất</Text>
@@ -124,6 +140,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 74,
   },
+  menuRowPressed: { opacity: 0.55 },
   menuLabel: {
     flex: 1,
     marginLeft: 22,
