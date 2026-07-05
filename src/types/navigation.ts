@@ -65,17 +65,6 @@ export type RootStackParamList = {
   DriverManagement: undefined;
   Passengers: undefined;
   Maintenance: undefined;
-  AdminMenuDetail: {
-    section:
-      | 'referral'
-      | 'marketing'
-      | 'reviews'
-      | 'management'
-      | 'passengerApp'
-      | 'appSettings'
-      | 'generalSettings'
-      | 'systemSettings';
-  };
 };
 
 export type MainTabParamList = {

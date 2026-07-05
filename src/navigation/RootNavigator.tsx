@@ -8,7 +8,6 @@ import { CustomerLocationSearchScreen } from '../screens/main/CustomerLocationSe
 import { TicketBookingScreen } from '../screens/main/TicketBookingScreen';
 import { TicketSearchResultsScreen } from '../screens/main/TicketSearchResultsScreen';
 import { VehicleDetailScreen } from '../screens/main/VehicleDetailScreen';
-import { AdminMenuDetailScreen } from '../screens/main/AdminMenuDetailScreen';
 import { DriverManagementScreen } from '../screens/main/DriverManagementScreen';
 import { FleetManagementScreen } from '../screens/main/FleetManagementScreen';
 import { MaintenanceScreen } from '../screens/main/MaintenanceScreen';
@@ -92,11 +91,6 @@ export function RootNavigator() {
           <Stack.Screen name="DriverManagement" component={DriverManagementScreen} options={{ title: 'Quản lý nhân sự' }} />
           <Stack.Screen name="Passengers" component={PassengersScreen} options={{ title: 'Quản lý khách hàng' }} />
           <Stack.Screen name="Maintenance" component={MaintenanceScreen} options={{ title: 'Bảo dưỡng' }} />
-          <Stack.Screen
-            name="AdminMenuDetail"
-            component={AdminMenuDetailScreen}
-            options={({ route }) => ({ title: sectionsTitle[route.params.section] })}
-          />
         </>
       ) : (
         <Stack.Screen
@@ -108,17 +102,6 @@ export function RootNavigator() {
     </Stack.Navigator>
   );
 }
-
-const sectionsTitle: Record<RootStackParamList['AdminMenuDetail']['section'], string> = {
-  referral: 'Giới thiệu An Nhiên',
-  marketing: 'Công cụ Marketing',
-  reviews: 'Quản lý đánh giá',
-  management: 'Quản lý',
-  passengerApp: 'Ứng dụng hành khách',
-  appSettings: 'Cài đặt ứng dụng',
-  generalSettings: 'Cài đặt chung',
-  systemSettings: 'Cài đặt hệ thống',
-};
 
 const styles = StyleSheet.create({
   loadingScreen: {
