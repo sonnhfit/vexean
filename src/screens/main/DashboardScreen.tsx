@@ -958,10 +958,9 @@ export function DashboardScreen() {
           <Text style={styles.salesText}>
             Đã bán: {bookedSeats}/{totalSeats} vé ({soldRate}%)
           </Text>
-          <Pressable style={styles.statsLink}>
+          <View style={styles.statsLink}>
             <Text style={styles.statsText}>Thống kê ngày</Text>
-            <Ionicons name="chevron-forward" size={24} color={ACTIVE_COLOR} />
-          </Pressable>
+          </View>
         </View>
 
         <ScrollView

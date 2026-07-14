@@ -106,9 +106,6 @@ export function LoginScreen() {
         >
           <View style={styles.hero}>
             <View style={styles.heroWave} />
-            <Pressable style={styles.backButton} accessibilityRole="button">
-              <Ionicons name="arrow-back" size={28} color={APP_COLORS.surface} />
-            </Pressable>
             <Text style={styles.heroTitle}>Xin chào</Text>
             <Text style={styles.heroSubtitle}>
               Đăng nhập để tận hưởng nhiều ưu đãi

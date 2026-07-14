@@ -633,11 +633,7 @@ export function CustomerHomeScreen() {
                   color={APP_COLORS.surface}
                 />
               </Pressable>
-            ) : (
-              <Pressable>
-                <Text style={styles.loginLink}>Đăng nhập</Text>
-              </Pressable>
-            )}
+            ) : null}
           </View>
           <Text style={styles.promise}>
             Chọn chuyến đi an tâm, nhẹ nhàng và thuận tiện cho từng hành trình

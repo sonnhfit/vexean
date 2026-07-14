@@ -6,9 +6,7 @@ import { useAppSelector } from '../store/hooks';
 import { AdminScreen } from '../screens/main/AdminScreen';
 import { AdminBookingScreen } from '../screens/main/AdminBookingScreen';
 import { CallCenterScreen } from '../screens/main/CallCenterScreen';
-import { CargoScreen } from '../screens/main/CargoScreen';
 import { CargoBookingsScreen } from '../screens/main/CargoBookingsScreen';
-import { CustomerFavoritesScreen } from '../screens/main/CustomerFavoritesScreen';
 import { CustomerHomeScreen } from '../screens/main/CustomerHomeScreen';
 import { CustomerNotificationsScreen } from '../screens/main/CustomerNotificationsScreen';
 import { CustomerTicketScreen } from '../screens/main/CustomerTicketScreen';
@@ -32,7 +30,6 @@ function createTabBarIcon(activeIcon: IconName, inactiveIcon: IconName): BottomT
 const dashboardIcon = createTabBarIcon('grid', 'grid-outline');
 const customerHomeIcon = createTabBarIcon('search', 'search-outline');
 const customerOrdersIcon = createTabBarIcon('receipt', 'receipt-outline');
-const customerFavoritesIcon = createTabBarIcon('heart', 'heart-outline');
 const customerNotificationsIcon = createTabBarIcon('notifications', 'notifications-outline');
 const passengersIcon = createTabBarIcon('people', 'people-outline');
 const cargoIcon = createTabBarIcon('cube', 'cube-outline');
@@ -91,11 +88,6 @@ export function MainTabs() {
           name="Cargo"
           component={CargoBookingsScreen}
           options={{ title: 'Hàng hoá', tabBarIcon: cargoIcon }}
-        />
-        <Tab.Screen
-          name="CustomerFavorites"
-          component={CustomerFavoritesScreen}
-          options={{ title: 'Yêu thích', tabBarIcon: customerFavoritesIcon }}
         />
         <Tab.Screen
           name="CustomerNotifications"
@@ -171,7 +163,7 @@ export function MainTabs() {
       ) : null}
       <Tab.Screen
         name="Cargo"
-        component={isDriver ? CargoBookingsScreen : CargoScreen}
+        component={CargoBookingsScreen}
         options={{ title: 'Hàng hoá', headerShown: !isDriver, tabBarIcon: cargoIcon }}
       />
       <Tab.Screen

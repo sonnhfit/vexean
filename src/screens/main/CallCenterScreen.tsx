@@ -75,13 +75,13 @@ export function CallCenterScreen() {
 
   const [appointmentName, setAppointmentName] = useState('');
   const [appointmentTitle, setAppointmentTitle] = useState('');
-  const [appointmentDate, setAppointmentDate] = useState('2026-06-11');
+  const [appointmentDate, setAppointmentDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [appointmentTime, setAppointmentTime] = useState('10:00');
   const [appointmentNote, setAppointmentNote] = useState('');
 
   const [pickupName, setPickupName] = useState('');
   const [pickupTitle, setPickupTitle] = useState('');
-  const [pickupDate, setPickupDate] = useState('2026-06-11');
+  const [pickupDate, setPickupDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [pickupTime, setPickupTime] = useState('15:00');
   const [pickupNote, setPickupNote] = useState('');
 
@@ -526,7 +526,7 @@ export function CallCenterScreen() {
                     <TextInput
                       value={appointmentDate}
                       onChangeText={setAppointmentDate}
-                      placeholder="2026-06-11"
+                      placeholder="YYYY-MM-DD"
                       placeholderTextColor={APP_COLORS.placeholder}
                       style={styles.input}
                     />
@@ -599,7 +599,7 @@ export function CallCenterScreen() {
                     <TextInput
                       value={pickupDate}
                       onChangeText={setPickupDate}
-                      placeholder="2026-06-11"
+                      placeholder="YYYY-MM-DD"
                       placeholderTextColor={APP_COLORS.placeholder}
                       style={styles.input}
                     />

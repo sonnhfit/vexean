@@ -1,7 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL } from '../config/api';
-
-const AUTH_STORAGE_KEY = 'vexean.auth';
+import { API_BASE_URL, API_TIMEOUT_MS, REFRESH_TOKEN_ENDPOINT } from '../config/api';
+import { clearStoredAuth, readStoredAuth, writeStoredAuth } from './authStorage';
 
 type HeaderValue = string | undefined;
 
@@ -24,9 +22,12 @@ export class ApiError<T = unknown> extends Error {
   }
 }
 
-type StoredAuth = {
-  accessToken?: string | null;
-};
+let refreshPromise: Promise<string | null> | null = null;
+let sessionExpiredHandler: (() => void) | null = null;
+
+export function setSessionExpiredHandler(handler: (() => void) | null) {
+  sessionExpiredHandler = handler;
+}
 
 function isJsonBody(body: unknown) {
   return (
@@ -85,17 +86,8 @@ async function getAuthHeader(auth: boolean | undefined) {
   }
 
   try {
-    const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-    if (!stored) {
-      return undefined;
-    }
-
-    const parsed: unknown = JSON.parse(stored);
-    if (!parsed || typeof parsed !== 'object') {
-      return undefined;
-    }
-
-    const accessToken = (parsed as StoredAuth).accessToken;
+    const stored = await readStoredAuth();
+    const accessToken = stored?.accessToken;
     if (!accessToken) {
       return undefined;
     }
@@ -104,6 +96,34 @@ async function getAuthHeader(auth: boolean | undefined) {
   } catch {
     return undefined;
   }
+}
+
+async function refreshAccessToken() {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    const stored = await readStoredAuth();
+    if (!stored?.refreshToken) return null;
+    try {
+      const response = await fetch(buildFullUrl(REFRESH_TOKEN_ENDPOINT), {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh: stored.refreshToken }),
+      });
+      const data = await readResponseBody(response) as { access?: string; refresh?: string } | null;
+      if (!response.ok || !data?.access) throw new Error('Refresh failed');
+      await writeStoredAuth({
+        ...stored,
+        accessToken: data.access,
+        refreshToken: data.refresh || stored.refreshToken,
+      });
+      return data.access;
+    } catch {
+      await clearStoredAuth();
+      sessionExpiredHandler?.();
+      return null;
+    }
+  })().finally(() => { refreshPromise = null; });
+  return refreshPromise;
 }
 
 async function readResponseBody(response: Response) {
@@ -195,16 +215,40 @@ export async function requestJson<T>(
     finalBody = body as RequestInit['body'];
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   const requestInit: RequestInit = {
     ...rest,
     headers: finalHeaders,
     body: finalBody,
+    signal: rest.signal || controller.signal,
   };
 
   const curlCommand = buildCurlCommand(url, requestInit);
   logApi(`[api${logLabel ? `:${logLabel}` : ''}] request`, curlCommand);
 
-  const response = await fetch(url, requestInit);
+  let response: Response;
+  try {
+    response = await fetch(url, requestInit);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new ApiError('Kết nối quá thời gian. Vui lòng thử lại.', 408, null);
+    }
+    throw new ApiError('Không có kết nối mạng. Vui lòng kiểm tra Internet.', 0, null);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (response.status === 401 && auth && !headers?.Authorization) {
+    const newAccessToken = await refreshAccessToken();
+    if (newAccessToken) {
+      return requestJson<T>(pathOrUrl, {
+        ...options,
+        auth: false,
+        headers: { ...headers, Authorization: `Bearer ${newAccessToken}` },
+      });
+    }
+  }
   const responseBody = await readResponseBody(response);
 
   logApi(`[api${logLabel ? `:${logLabel}` : ''}] response`, {

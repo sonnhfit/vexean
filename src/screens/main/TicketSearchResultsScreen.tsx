@@ -12,8 +12,9 @@ import Ionicons from '@react-native-vector-icons/ionicons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useToast } from '../../components/Toast';
-import { formatTripPrice } from '../../data/mockTrips';
 import { requestJson } from '../../services/apiClient';
+
+const formatTripPrice = (price: number) => `${price.toLocaleString('vi-VN')}đ`;
 import { APP_COLORS } from '../../theme/colors';
 import { RootStackParamList } from '../../types/navigation';
 
@@ -74,15 +75,8 @@ type SearchTrip = {
   operator: string;
   vehicleType: string;
   price: number;
-  originalPrice?: number;
-  discountLabel?: string;
   seatsLeft: number;
-  rating: number;
-  reviewCount: number;
   color: string;
-  badge?: string;
-  endsIn?: string;
-  perks: string[];
 };
 
 function relationName(value: OdooRelation | undefined) {
@@ -170,10 +164,7 @@ function toTripCardModel(trip: OdooTripSummary, index: number): SearchTrip {
     vehicleType,
     price: Number(trip.price || trip.route?.price || 0),
     seatsLeft: trip.available_seats,
-    rating: 4.8,
-    reviewCount: Math.max(trip.booked_seats || 0, 0),
     color: ['#5c9f92', '#4d8ea1', '#7b8f76', '#d97a27'][index % 4],
-    perks: ['Xác nhận chỗ ngay lập tức', 'Theo dõi hành trình xe'],
   };
 }
 
@@ -181,7 +172,6 @@ export function TicketSearchResultsScreen({ route, navigation }: Props) {
   const { showToast } = useToast();
   const params = route.params;
   const [trips, setTrips] = useState<OdooTripSummary[]>([]);
-  const [favoriteIds, setFavoriteIds] = useState(() => new Set<number>());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -242,16 +232,6 @@ export function TicketSearchResultsScreen({ route, navigation }: Props) {
     loadTrips('initial');
   }, [loadTrips]);
 
-  const favoriteTrip = (trip: SearchTrip) => {
-    setFavoriteIds(current => new Set(current).add(trip.id));
-    showToast({
-      type: 'success',
-      title: 'Đã thêm vào yêu thích',
-      message: trip.operator,
-    });
-    navigation.navigate('MainTabs', { screen: 'CustomerFavorites' });
-  };
-
   const chooseTripSeats = (trip: SearchTrip) => {
     navigation.navigate('TicketBooking', {
       initialTripId: trip.id,
@@ -275,9 +255,6 @@ export function TicketSearchResultsScreen({ route, navigation }: Props) {
               <Ionicons name="chevron-down" size={18} color={APP_COLORS.surface} />
             </View>
           </View>
-          <Pressable>
-            <Text style={styles.changeText}>Thay đổi</Text>
-          </Pressable>
         </View>
       </View>
 
@@ -359,23 +336,12 @@ export function TicketSearchResultsScreen({ route, navigation }: Props) {
                 key={trip.id}
                 trip={trip}
                 featured={index === 0}
-                favorite={favoriteIds.has(trip.id)}
-                onFavorite={() => favoriteTrip(trip)}
                 onChooseSeat={() => chooseTripSeats(trip)}
               />
             ))
           : null}
       </ScrollView>
 
-      <View style={styles.filterBar}>
-        <FilterButton icon="options-outline" label="Lọc" />
-        <View style={styles.filterDivider} />
-        <FilterButton icon="filter-outline" label="Sắp xếp" />
-        <View style={styles.filterDivider} />
-        <FilterButton icon="time-outline" label="Giờ đi" />
-        <View style={styles.filterDivider} />
-        <FilterButton icon="bus-outline" label="Nhà xe" />
-      </View>
     </SafeAreaView>
   );
 }
@@ -420,28 +386,14 @@ function PriceMode({
 function TripCard({
   trip,
   featured,
-  favorite,
-  onFavorite,
   onChooseSeat,
 }: {
   trip: SearchTrip;
   featured?: boolean;
-  favorite: boolean;
-  onFavorite: () => void;
   onChooseSeat: () => void;
 }) {
   return (
     <View style={styles.tripCard}>
-      {trip.badge ? (
-        <View style={styles.badgeRow}>
-          <View style={styles.badge}>
-            <Ionicons name="timer-outline" size={14} color={APP_COLORS.surface} />
-            <Text style={styles.badgeText}>{trip.badge}</Text>
-          </View>
-          <Text style={styles.endsInText}>{trip.endsIn}</Text>
-        </View>
-      ) : null}
-
       <View style={[styles.tripTop, featured && styles.tripTopFeatured]}>
         <View style={styles.timeColumn}>
           <Text style={styles.departureTime}>{trip.departureTime}</Text>
@@ -464,24 +416,8 @@ function TripCard({
         <View style={styles.priceColumn}>
           <Text style={styles.fromText}>Từ</Text>
           <Text style={styles.price}>{formatTripPrice(trip.price)}</Text>
-          {trip.originalPrice ? (
-            <View style={styles.originalRow}>
-              <Text style={styles.originalPrice}>
-                {formatTripPrice(trip.originalPrice)}
-              </Text>
-              {trip.discountLabel ? (
-                <Text style={styles.smallDiscount}>{trip.discountLabel}</Text>
-              ) : null}
-            </View>
-          ) : null}
           <Text style={styles.seatsLeft}>{trip.seatsLeft} chỗ trống</Text>
         </View>
-      </View>
-
-      <View style={styles.couponRow}>
-        <Coupon text="Giảm 50%, tối đa 250k" />
-        <Coupon text="Giảm 50%, tối đa 250k" />
-        <Coupon text="Giảm 25%" compact />
       </View>
 
       <View style={styles.cardDivider} />
@@ -498,68 +434,15 @@ function TripCard({
           <Text style={styles.vehicleType} numberOfLines={1}>
             {trip.vehicleType}
           </Text>
-          <View style={styles.ratingRow}>
-            <Text style={styles.ratingText}>{trip.rating.toFixed(1)}</Text>
-            <Ionicons name="star" size={20} color="#ffcf33" />
-            <Text style={styles.reviewText}>({trip.reviewCount} đánh giá)</Text>
-          </View>
         </View>
-        <Pressable style={styles.heartButton} onPress={onFavorite}>
-          <Ionicons
-            name={favorite ? 'heart' : 'heart-outline'}
-            size={28}
-            color={favorite ? '#ef5350' : APP_COLORS.primaryDark}
-          />
-        </Pressable>
       </View>
 
       <View style={styles.bottomRow}>
-        <View style={styles.perkList}>
-          {trip.perks.map((perk, index) => (
-            <View key={perk} style={styles.perkRow}>
-              <PerkIcon index={index} />
-              <Text style={styles.perkText} numberOfLines={1}>
-                {perk}
-              </Text>
-              {perk.includes('lập tức') ? (
-                <Ionicons name="information-circle-outline" size={15} color={APP_COLORS.primaryDark} />
-              ) : null}
-            </View>
-          ))}
-        </View>
         <Pressable style={styles.chooseSeatButton} onPress={onChooseSeat}>
           <Text style={styles.chooseSeatText}>Chọn chỗ</Text>
         </Pressable>
       </View>
     </View>
-  );
-}
-
-function Coupon({ text, compact }: { text: string; compact?: boolean }) {
-  return (
-    <View style={[styles.coupon, compact && styles.couponCompact]}>
-      <View style={styles.couponIcon}>
-        <Ionicons name="flash" size={16} color="#ffd32a" />
-      </View>
-      <Text style={styles.couponText} numberOfLines={1}>
-        {text}
-      </Text>
-    </View>
-  );
-}
-
-function PerkIcon({ index }: { index: number }) {
-  const icons: IconName[] = ['card', 'call', 'flash', 'location'];
-  const colors = ['#2fac6a', '#2fac6a', '#2fac6a', '#ef5350'];
-  return <Ionicons name={icons[index % icons.length]} size={18} color={colors[index % colors.length]} />;
-}
-
-function FilterButton({ icon, label }: { icon: IconName; label: string }) {
-  return (
-    <Pressable style={styles.filterButton}>
-      <Ionicons name={icon} size={22} color={APP_COLORS.surface} />
-      <Text style={styles.filterText}>{label}</Text>
-    </Pressable>
   );
 }
 

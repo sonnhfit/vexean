@@ -5,7 +5,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider } from 'react-redux';
 import { ToastProvider } from './src/components/Toast';
 import { RootNavigator } from './src/navigation/RootNavigator';
-import { bootstrapAuth } from './src/store/authSlice';
+import { bootstrapAuth, signOut } from './src/store/authSlice';
+import { setSessionExpiredHandler } from './src/services/apiClient';
 import { useAppDispatch } from './src/store/hooks';
 import { store } from './src/store/store';
 import { APP_COLORS } from './src/theme/colors';
@@ -35,6 +36,8 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
 
   useEffect(() => {
     dispatch(bootstrapAuth());
+    setSessionExpiredHandler(() => dispatch(signOut()));
+    return () => setSessionExpiredHandler(null);
   }, [dispatch]);
 
   return (

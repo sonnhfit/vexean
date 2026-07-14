@@ -84,77 +84,27 @@ export function AccountScreen() {
 
           <View style={styles.customerMenu}>
             <CustomerMenuItem
-              icon="star-outline"
-              title="Điểm thưởng của tôi"
-              text="Tích lũy điểm thưởng để đổi ưu đãi hấp dẫn"
-              onPress={() => navigation.navigate('AccountDetail', { section: 'rewards' })}
+              icon="person-circle-outline"
+              title="Thông tin cá nhân"
+              text="Xem và cập nhật thông tin tài khoản"
+              onPress={() => navigation.navigate('Profile')}
             />
             <CustomerMenuItem
-              icon="pricetag-outline"
-              title="Ưu đãi"
-              text="Xem danh sách các ưu đãi dành riêng cho bạn"
-              onPress={() => navigation.navigate('AccountDetail', { section: 'offers' })}
+              icon="shield-checkmark-outline"
+              title="Chính sách quyền riêng tư"
+              onPress={() => navigation.navigate('AccountDetail', { section: 'privacy' })}
             />
             <CustomerMenuItem
-              icon="gift-outline"
-              title="Giới thiệu nhận quà"
-              badge="Mới"
-              onPress={() => navigation.navigate('AccountDetail', { section: 'referral' })}
+              icon="document-text-outline"
+              title="Điều khoản sử dụng"
+              onPress={() => navigation.navigate('AccountDetail', { section: 'terms' })}
             />
             <CustomerMenuItem
-              icon="card-outline"
-              title="Quản lý thẻ"
-              text="Lưu thẻ và thanh toán chỉ với 1 chạm"
-              onPress={() => navigation.navigate('AccountDetail', { section: 'cards' })}
+              icon="trash-outline"
+              title="Xóa tài khoản"
+              text="Xóa tài khoản và dữ liệu liên quan"
+              onPress={() => navigation.navigate('AccountDetail', { section: 'deleteAccount' })}
             />
-            <CustomerMenuItem
-              icon="create-outline"
-              title="Đánh giá chuyến đi"
-              text="Chia sẻ cảm nhận để nhận điểm thưởng"
-              onPress={() => navigation.navigate('AccountDetail', { section: 'reviews' })}
-            />
-          </View>
-
-          <View style={styles.customerDivider} />
-
-          <View style={styles.customerMenu}>
-            <CustomerMenuItem
-              icon="settings-outline"
-              title="Cài đặt"
-              value="v8.9.51p"
-              onPress={() => navigation.navigate('AccountDetail', { section: 'settings' })}
-            />
-            <CustomerMenuItem
-              icon="help-circle-outline"
-              title="Trung tâm Hỗ trợ"
-              onPress={() => navigation.navigate('AccountDetail', { section: 'support' })}
-            />
-            <CustomerMenuItem
-              icon="mail-outline"
-              title="Góp ý"
-              onPress={() => navigation.navigate('AccountDetail', { section: 'feedback' })}
-            />
-            <CustomerMenuItem
-              icon="briefcase-outline"
-              title="Cơ hội cùng An Nhiên"
-              onPress={() => navigation.navigate('AccountDetail', { section: 'careers' })}
-            />
-            <CustomerMenuItem
-              icon="bus-outline"
-              title="Về An Nhiên"
-              onPress={() => navigation.navigate('AccountDetail', { section: 'about' })}
-            />
-          </View>
-
-          <View style={styles.languageRow}>
-            <View style={styles.languageItem}>
-              <Text style={styles.flagText}>🇻🇳</Text>
-              <Text style={styles.languageTextActive}>Tiếng Việt</Text>
-            </View>
-            <View style={styles.languageItem}>
-              <Text style={styles.flagText}>🇬🇧</Text>
-              <Text style={styles.languageText}>English</Text>
-            </View>
           </View>
 
           <Pressable style={styles.customerSignOut} onPress={() => dispatch(signOut())}>
@@ -190,6 +140,18 @@ export function AccountScreen() {
             title="Chỉnh sửa thông tin"
             text="Cập nhật tên, email và SĐT liên kết"
             onPress={() => navigation.navigate('EditProfile')}
+          />
+          <AccountAction
+            icon="shield-checkmark-outline"
+            title="Chính sách quyền riêng tư"
+            text="Cách An Nhiên xử lý dữ liệu"
+            onPress={() => navigation.navigate('AccountDetail', { section: 'privacy' })}
+          />
+          <AccountAction
+            icon="document-text-outline"
+            title="Điều khoản sử dụng"
+            text="Quyền và trách nhiệm khi dùng ứng dụng"
+            onPress={() => navigation.navigate('AccountDetail', { section: 'terms' })}
           />
         </View>
         <Pressable style={styles.signOutButton} onPress={() => dispatch(signOut())}>

@@ -1,8 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 import { requestJson } from '../services/apiClient';
-
-const AUTH_STORAGE_KEY = 'vexean.auth';
+import { readStoredAuth } from '../services/authStorage';
+import { DELETE_ACCOUNT_ENDPOINT } from '../config/api';
 
 type UserPermissions = Record<string, boolean>;
 type UserPhoneProfile = {
@@ -160,13 +159,8 @@ function isPersistedAuthState(value: unknown): value is PersistedAuthState {
 
 export const bootstrapAuth = createAsyncThunk<PersistedAuthState | null>('auth/bootstrap', async () => {
   try {
-    const storedValue = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-    if (!storedValue) {
-      return null;
-    }
-
-    const parsedValue: unknown = JSON.parse(storedValue);
-    return isPersistedAuthState(parsedValue) ? parsedValue : null;
+    const storedValue = await readStoredAuth();
+    return isPersistedAuthState(storedValue) ? storedValue : null;
   } catch {
     return null;
   }
@@ -306,6 +300,22 @@ export const updateProfile = createAsyncThunk<
   }
 });
 
+export const deleteAccount = createAsyncThunk<void, void, { rejectValue: string }>(
+  'auth/deleteAccount',
+  async (_, { rejectWithValue }) => {
+    try {
+      await requestJson(DELETE_ACCOUNT_ENDPOINT, {
+        method: 'DELETE',
+        auth: true,
+        logLabel: 'deleteAccount',
+      });
+    } catch (error) {
+      if (error instanceof Error) return rejectWithValue(error.message);
+      return rejectWithValue('Không thể xóa tài khoản. Vui lòng thử lại.');
+    }
+  },
+);
+
 const authSlice = createSlice({
   name: 'auth',
   initialState,
@@ -394,6 +404,20 @@ const authSlice = createSlice({
       .addCase(updateProfile.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload || 'Cập nhật hồ sơ thất bại.';
+      })
+      .addCase(deleteAccount.pending, state => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(deleteAccount.fulfilled, state => {
+        state.accessToken = null;
+        state.refreshToken = null;
+        state.user = null;
+        state.status = 'idle';
+      })
+      .addCase(deleteAccount.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload || 'Không thể xóa tài khoản.';
       });
   },
 });

@@ -1,14 +1,13 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { configureStore, createListenerMiddleware } from '@reduxjs/toolkit';
+import { clearStoredAuth, writeStoredAuth } from '../services/authStorage';
 import {
+  deleteAccount,
   signIn,
   signOut,
   updateProfile,
   verifyCustomerOtp,
 } from './authSlice';
 import authReducer from './authSlice';
-
-const AUTH_STORAGE_KEY = 'vexean.auth';
 
 const authListenerMiddleware = createListenerMiddleware();
 
@@ -17,14 +16,11 @@ authListenerMiddleware.startListening({
     signIn.fulfilled.match(action) || verifyCustomerOtp.fulfilled.match(action),
   effect: async action => {
     try {
-      await AsyncStorage.setItem(
-        AUTH_STORAGE_KEY,
-        JSON.stringify({
+      await writeStoredAuth({
           accessToken: action.payload.access,
           refreshToken: action.payload.refresh,
           user: action.payload.user,
-        }),
-      );
+      });
     } catch {
       // Ignore storage errors so login still works.
     }
@@ -32,10 +28,11 @@ authListenerMiddleware.startListening({
 });
 
 authListenerMiddleware.startListening({
-  actionCreator: signOut,
+  matcher: action =>
+    signOut.match(action) || deleteAccount.fulfilled.match(action),
   effect: async () => {
     try {
-      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+      await clearStoredAuth();
     } catch {
       // Ignore storage errors during logout.
     }
@@ -51,17 +48,14 @@ authListenerMiddleware.startListening({
         return;
       }
 
-      await AsyncStorage.setItem(
-        AUTH_STORAGE_KEY,
-        JSON.stringify({
+      await writeStoredAuth({
           accessToken: state.auth.accessToken,
           refreshToken: state.auth.refreshToken,
           user: {
             ...state.auth.user,
             ...action.payload,
           },
-        }),
-      );
+      });
     } catch {
       // Ignore storage errors so profile update still works.
     }
