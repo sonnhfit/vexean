@@ -25,6 +25,7 @@ import {
   listCargo,
   loadCargoTracking,
 } from '../../services/cargoApi';
+import { requestJson } from '../../services/apiClient';
 import { useAppSelector } from '../../store/hooks';
 import { APP_COLORS } from '../../theme/colors';
 import { CargoBooking, CargoCreateInput, CargoRole, CargoState, CargoTracking } from '../../types/cargo';
@@ -152,18 +153,114 @@ function CargoCard({ item, onPress }: { item: CargoBooking; onPress: () => void 
 
 type Form = { trip: string; sender: string; senderPhone: string; pickup: string; receiver: string; receiverPhone: string; delivery: string; description: string; weight: string; quantity: string; fee: string; cod: string; note: string; fragile: boolean; pickupNow: boolean };
 
+type CargoTrip = {
+  id: number;
+  name?: string;
+  departure_time?: string;
+  route_id?: false | [number, string];
+  vehicle_id?: false | [number, string];
+  route?: { name?: string; origin?: string; destination?: string };
+  vehicle?: { name?: string; license_plate?: string };
+};
+
+type CargoTripsResponse = CargoTrip[] | { results?: CargoTrip[]; trips?: CargoTrip[] };
+
+type AddressSuggestion = { id: string; title: string; address: string; source: 'odoo' | 'osm' };
+type OdooLocation = { id: number; name: string; display_name?: string; province?: string };
+type OSMAddress = { place_id: number; display_name: string; name?: string };
+
+function queryDate(date: Date) {
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function normalizeCargoTrips(data: CargoTripsResponse) {
+  if (Array.isArray(data)) return data;
+  return data.results || data.trips || [];
+}
+
+function cargoTripRoute(trip: CargoTrip) {
+  if (trip.route?.origin && trip.route?.destination) return `${trip.route.origin} → ${trip.route.destination}`;
+  return trip.route?.name || (Array.isArray(trip.route_id) ? trip.route_id[1] : '') || trip.name || `Chuyến #${trip.id}`;
+}
+
+function cargoTripMeta(trip: CargoTrip) {
+  const departure = trip.departure_time ? new Date(trip.departure_time.replace(' ', 'T')) : null;
+  const time = departure && !Number.isNaN(departure.getTime())
+    ? departure.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : 'Chưa có giờ chạy';
+  const vehicle = trip.vehicle?.license_plate || trip.vehicle?.name || (Array.isArray(trip.vehicle_id) ? trip.vehicle_id[1] : 'Chưa xếp xe');
+  return `${time} • ${vehicle}`;
+}
+
+async function searchAddressSuggestions(query: string) {
+  const odooParams = new URLSearchParams({ search: query, limit: '8' });
+  const osmParams = new URLSearchParams({
+    q: query, format: 'jsonv2', addressdetails: '1', limit: '8', countrycodes: 'vn', 'accept-language': 'vi',
+  });
+  const [odooResult, osmResult] = await Promise.allSettled([
+    requestJson<{ results?: OdooLocation[] }>(`/api/nhaxe/odoo/locations/?${odooParams.toString()}`, { method: 'GET', logLabel: 'cargo-pickup-location-search' }),
+    requestJson<OSMAddress[]>(`https://nominatim.openstreetmap.org/search?${osmParams.toString()}`, { method: 'GET', headers: { 'Accept-Language': 'vi' }, logLabel: 'cargo-pickup-osm-search' }),
+  ]);
+  if (odooResult.status === 'rejected' && osmResult.status === 'rejected') throw odooResult.reason;
+  const odoo = odooResult.status === 'fulfilled' ? odooResult.value.results || [] : [];
+  const osm = osmResult.status === 'fulfilled' && Array.isArray(osmResult.value) ? osmResult.value : [];
+  const suggestions: AddressSuggestion[] = [
+    ...odoo.map(item => ({ id: `odoo-${item.id}`, title: item.name, address: item.display_name || [item.name, item.province].filter(Boolean).join(', '), source: 'odoo' as const })),
+    ...osm.map(item => ({ id: `osm-${item.place_id}`, title: item.name || item.display_name.split(',')[0]?.trim() || item.display_name, address: item.display_name, source: 'osm' as const })),
+  ];
+  const seen = new Set<string>();
+  return suggestions.filter(item => {
+    const key = item.address.toLocaleLowerCase('vi');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 8);
+}
+
 function CreateCargoModal({ visible, role, userName, userPhone, onClose, onCreated }: { visible: boolean; role: CargoRole; userName: string; userPhone: string; onClose: () => void; onCreated: (item: CargoBooking) => void }) {
   const initial: Form = { trip: '', sender: role === 'customer' ? userName : '', senderPhone: role === 'customer' ? userPhone : '', pickup: '', receiver: '', receiverPhone: '', delivery: '', description: '', weight: '', quantity: '1', fee: '', cod: '', note: '', fragile: false, pickupNow: role === 'driver' };
   const [form, setForm] = useState<Form>(initial);
   const [saving, setSaving] = useState(false);
+  const [trips, setTrips] = useState<CargoTrip[]>([]);
+  const [loadingTrips, setLoadingTrips] = useState(false);
+  const [tripsError, setTripsError] = useState<string | null>(null);
   const set = (key: keyof Form, value: string | boolean) => setForm(current => ({ ...current, [key]: value }));
   useEffect(() => { if (visible) setForm(initial); }, [visible, userName, userPhone]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadTrips = useCallback(async () => {
+    if (role === 'customer') return;
+    setLoadingTrips(true);
+    setTripsError(null);
+    try {
+      const start = new Date();
+      const end = new Date(start);
+      end.setDate(end.getDate() + 7);
+      const params = new URLSearchParams({
+        date_from: queryDate(start), date_to: queryDate(end),
+        states: role === 'driver' ? 'confirmed,boarding,running' : 'draft,confirmed',
+        limit: '200',
+      });
+      const endpoint = role === 'driver' ? '/api/nhaxe/odoo/driver/me/trips/' : '/api/nhaxe/odoo/trips/';
+      const data = await requestJson<CargoTripsResponse>(`${endpoint}?${params.toString()}`, {
+        method: 'GET', auth: true, logLabel: 'cargo-create-trips',
+      });
+      setTrips(normalizeCargoTrips(data));
+    } catch (cause) {
+      setTrips([]);
+      setTripsError(cause instanceof Error ? cause.message : 'Không tải được danh sách chuyến.');
+    } finally {
+      setLoadingTrips(false);
+    }
+  }, [role]);
+
+  useEffect(() => { if (visible) loadTrips(); }, [loadTrips, visible]);
 
   const submit = async () => {
     if (!form.sender.trim() || !form.senderPhone.trim() || !form.receiver.trim() || !form.receiverPhone.trim() || !form.description.trim()) {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập đủ người gửi, người nhận, số điện thoại và mô tả hàng.'); return;
     }
-    if (role === 'driver' && !Number(form.trip)) { Alert.alert('Thiếu chuyến', 'Tài xế phải nhập ID chuyến được phân công.'); return; }
+    if (role === 'driver' && !Number(form.trip)) { Alert.alert('Thiếu chuyến', 'Vui lòng chọn chuyến được phân công.'); return; }
     const payload: CargoCreateInput = {
       sender_name: form.sender.trim(), sender_phone: form.senderPhone.trim(), receiver_name: form.receiver.trim(), receiver_phone: form.receiverPhone.trim(), cargo_description: form.description.trim(),
       pickup_location: form.pickup.trim() || undefined, delivery_location: form.delivery.trim() || undefined,
@@ -183,8 +280,8 @@ function CreateCargoModal({ visible, role, userName, userPhone, onClose, onCreat
       <KeyboardAvoidingView style={styles.modal} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ModalHeader title="Tạo kiện hàng" onClose={onClose} />
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-        {(role !== 'customer') && <Field label={`ID chuyến${role === 'driver' ? ' *' : ''}`} value={form.trip} onChangeText={v => set('trip', v)} keyboardType="number-pad" placeholder="Ví dụ: 7" />}
-        <Text style={styles.groupTitle}>Người gửi</Text><Field label="Họ tên *" value={form.sender} onChangeText={v => set('sender', v)} /><Field label="Số điện thoại *" value={form.senderPhone} onChangeText={v => set('senderPhone', v)} keyboardType="phone-pad" /><Field label="Điểm lấy hàng" value={form.pickup} onChangeText={v => set('pickup', v)} />
+        {role !== 'customer' && <TripSelector trips={trips} value={form.trip} required={role === 'driver'} loading={loadingTrips} error={tripsError} onChange={value => set('trip', value)} onRetry={loadTrips} />}
+        <Text style={styles.groupTitle}>Người gửi</Text><Field label="Họ tên *" value={form.sender} onChangeText={v => set('sender', v)} /><Field label="Số điện thoại *" value={form.senderPhone} onChangeText={v => set('senderPhone', v)} keyboardType="phone-pad" /><AddressSuggestionField label="Điểm lấy hàng" value={form.pickup} onChange={v => set('pickup', v)} />
         <Text style={styles.groupTitle}>Người nhận</Text><Field label="Họ tên *" value={form.receiver} onChangeText={v => set('receiver', v)} /><Field label="Số điện thoại *" value={form.receiverPhone} onChangeText={v => set('receiverPhone', v)} keyboardType="phone-pad" /><Field label="Điểm giao hàng" value={form.delivery} onChangeText={v => set('delivery', v)} />
         <Text style={styles.groupTitle}>Kiện hàng</Text><Field label="Mô tả *" value={form.description} onChangeText={v => set('description', v)} multiline /><View style={styles.twoCols}><Field wrap label="Số lượng" value={form.quantity} onChangeText={v => set('quantity', v)} keyboardType="number-pad" /><Field wrap label="Khối lượng (kg)" value={form.weight} onChangeText={v => set('weight', v)} keyboardType="decimal-pad" /></View>
         <View style={styles.twoCols}>{role === 'admin' && <Field wrap label="Cước phí (VND)" value={form.fee} onChangeText={v => set('fee', v)} keyboardType="number-pad" />}<Field wrap label="Thu hộ COD" value={form.cod} onChangeText={v => set('cod', v)} keyboardType="number-pad" /></View>
@@ -198,6 +295,81 @@ function CreateCargoModal({ visible, role, userName, userPhone, onClose, onCreat
       </KeyboardAvoidingView>
     </SafeAreaView>
   </Modal>;
+}
+
+function TripSelector({ trips, value, required, loading, error, onChange, onRetry }: { trips: CargoTrip[]; value: string; required: boolean; loading: boolean; error: string | null; onChange: (value: string) => void; onRetry: () => void }) {
+  return <View style={styles.tripSelector}>
+    <View style={styles.tripSelectorHead}><Text style={styles.fieldLabel}>{`Chuyến${required ? ' *' : ' (không bắt buộc)'}`}</Text>{value ? <Pressable onPress={() => onChange('')}><Text style={styles.clearTrip}>Bỏ chọn</Text></Pressable> : null}</View>
+    {loading ? <View style={styles.tripLoading}><ActivityIndicator size="small" color={APP_COLORS.primaryDark} /><Text style={styles.tripHelp}>Đang tải các chuyến...</Text></View>
+      : error ? <Pressable style={styles.tripMessage} onPress={onRetry}><Ionicons name="refresh" size={18} color={APP_COLORS.danger} /><Text style={styles.tripError} numberOfLines={2}>{error} — chạm để thử lại</Text></Pressable>
+      : trips.length === 0 ? <View style={styles.tripMessage}><Ionicons name="bus-outline" size={18} color={APP_COLORS.placeholder} /><Text style={styles.tripHelp}>Không có chuyến phù hợp trong 7 ngày tới.</Text></View>
+      : <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tripOptions} keyboardShouldPersistTaps="handled">
+        {trips.map(trip => {
+          const selected = value === String(trip.id);
+          return <Pressable key={trip.id} onPress={() => onChange(String(trip.id))} style={[styles.tripOption, selected && styles.tripOptionSelected]}>
+            <View style={styles.tripOptionTitle}><Ionicons name="bus-outline" size={17} color={selected ? APP_COLORS.surface : APP_COLORS.primaryDark} /><Text numberOfLines={1} style={[styles.tripOptionName, selected && styles.tripOptionNameSelected]}>{cargoTripRoute(trip)}</Text></View>
+            <Text numberOfLines={1} style={[styles.tripOptionMeta, selected && styles.tripOptionMetaSelected]}>{cargoTripMeta(trip)}</Text>
+          </Pressable>;
+        })}
+      </ScrollView>}
+  </View>;
+}
+
+function AddressSuggestionField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const [selectedAddress, setSelectedAddress] = useState('');
+
+  useEffect(() => {
+    const query = value.trim();
+    if (query.length < 2 || query === selectedAddress) {
+      setSuggestions([]);
+      setSearching(false);
+      setSearchError(false);
+      return;
+    }
+    let active = true;
+    const timeout = setTimeout(async () => {
+      setSearching(true);
+      setSearchError(false);
+      try {
+        const results = await searchAddressSuggestions(query);
+        if (active) setSuggestions(results);
+      } catch {
+        if (active) { setSuggestions([]); setSearchError(true); }
+      } finally {
+        if (active) setSearching(false);
+      }
+    }, 350);
+    return () => { active = false; clearTimeout(timeout); };
+  }, [selectedAddress, value]);
+
+  const change = (next: string) => {
+    setSelectedAddress('');
+    onChange(next);
+  };
+  const select = (item: AddressSuggestion) => {
+    setSelectedAddress(item.address);
+    setSuggestions([]);
+    onChange(item.address);
+  };
+
+  return <View style={styles.field}>
+    <Text style={styles.fieldLabel}>{label}</Text>
+    <View style={styles.addressInputWrap}>
+      <Ionicons name="location-outline" size={19} color={APP_COLORS.primaryDark} />
+      <TextInput value={value} onChangeText={change} style={styles.addressInput} placeholder="Nhập tên đường, phường/xã..." placeholderTextColor={APP_COLORS.placeholder} autoCorrect={false} />
+      {searching ? <ActivityIndicator size="small" color={APP_COLORS.primaryDark} /> : value ? <Pressable onPress={() => change('')} accessibilityLabel="Xóa địa điểm"><Ionicons name="close-circle" size={19} color={APP_COLORS.placeholder} /></Pressable> : null}
+    </View>
+    {suggestions.length > 0 ? <View style={styles.addressSuggestions}>
+      {suggestions.map((item, index) => <Pressable key={item.id} onPress={() => select(item)} style={[styles.addressSuggestion, index < suggestions.length - 1 && styles.addressSuggestionBorder]}>
+        <Ionicons name={item.source === 'odoo' ? 'business-outline' : 'map-outline'} size={18} color={APP_COLORS.primaryDark} />
+        <View style={styles.flex}><Text style={styles.addressTitle} numberOfLines={1}>{item.title}</Text><Text style={styles.addressDetail} numberOfLines={2}>{item.address}</Text></View>
+      </Pressable>)}
+    </View> : null}
+    {searchError ? <Text style={styles.addressError}>Không tải được gợi ý. Bạn vẫn có thể nhập địa chỉ thủ công.</Text> : null}
+  </View>;
 }
 
 function CargoDetailModal({ item, role, onClose, onChanged }: { item: CargoBooking | null; role: CargoRole; onClose: () => void; onChanged: (item: CargoBooking) => void }) {
@@ -255,6 +427,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: 'white', borderWidth: 1, borderColor: APP_COLORS.border, borderRadius: 14, padding: 14 }, cardHead: { flexDirection: 'row', alignItems: 'flex-start' }, code: { fontSize: 16, fontWeight: '800', color: APP_COLORS.textPrimary }, trip: { fontSize: 11, color: APP_COLORS.textSecondary, marginTop: 3 }, badge: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 }, badgeText: { fontSize: 10, fontWeight: '700' }, description: { color: APP_COLORS.textPrimary, fontSize: 13, fontWeight: '600', marginVertical: 11 }, routeRow: { flexDirection: 'row', gap: 9, marginTop: 7 }, routeDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: APP_COLORS.primary, margin: 3 }, routeName: { color: APP_COLORS.textSecondary, fontSize: 12, fontWeight: '600' }, routePlace: { color: APP_COLORS.placeholder, fontSize: 11, marginTop: 2 }, cardFoot: { borderTopWidth: 1, borderTopColor: APP_COLORS.border, marginTop: 12, paddingTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }, small: { flex: 1, color: APP_COLORS.textSecondary, fontSize: 11 }, collect: { color: APP_COLORS.success, fontWeight: '800', fontSize: 12 },
   empty: { alignItems: 'center', padding: 35, marginTop: 20, backgroundColor: 'white', borderRadius: 14, borderWidth: 1, borderColor: APP_COLORS.border }, emptyText: { marginTop: 10, textAlign: 'center', color: APP_COLORS.textSecondary }, retry: { marginTop: 12, backgroundColor: APP_COLORS.primaryDark, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 8 }, retryText: { color: 'white', fontWeight: '700' },
   modal: { flex: 1, backgroundColor: APP_COLORS.background }, modalHeader: { minHeight: 60, paddingLeft: 16, paddingBottom: 8, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: APP_COLORS.border, flexDirection: 'row', gap: 12, justifyContent: 'space-between', alignItems: 'center' }, modalTitle: { flex: 1, minWidth: 0, fontSize: 20, fontWeight: '800', color: APP_COLORS.textPrimary }, closeButton: { width: 44, height: 44, flexShrink: 0, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: APP_COLORS.background }, form: { padding: 16, paddingBottom: 20 }, groupTitle: { fontSize: 15, fontWeight: '800', color: APP_COLORS.textPrimary, marginTop: 12, marginBottom: 9 }, field: { marginBottom: 11 }, fieldWrap: { flex: 1 }, fieldLabel: { color: APP_COLORS.textSecondary, fontSize: 12, marginBottom: 5 }, input: { minHeight: 48, borderWidth: 1, borderColor: APP_COLORS.border, borderRadius: 10, paddingHorizontal: 12, color: APP_COLORS.textPrimary, backgroundColor: 'white' }, multiline: { minHeight: 75, paddingTop: 11, textAlignVertical: 'top' }, twoCols: { flexDirection: 'row', gap: 10 }, toggle: { flexDirection: 'row', minHeight: 52, alignItems: 'center', justifyContent: 'space-between' }, toggleLabel: { color: APP_COLORS.textPrimary, fontWeight: '600' }, stickyFooter: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 8, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: APP_COLORS.border }, primaryButton: { minHeight: 52, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: APP_COLORS.primaryDark }, disabled: { opacity: 0.6 }, primaryText: { color: 'white', fontWeight: '800', fontSize: 15 },
+  tripSelector: { marginBottom: 12 }, tripSelectorHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, clearTrip: { color: APP_COLORS.danger, fontSize: 12, fontWeight: '700', marginBottom: 5 }, tripOptions: { gap: 9, paddingVertical: 2 }, tripOption: { width: 245, minHeight: 72, justifyContent: 'center', padding: 11, borderRadius: 11, borderWidth: 1, borderColor: APP_COLORS.border, backgroundColor: APP_COLORS.surface }, tripOptionSelected: { backgroundColor: APP_COLORS.primaryDark, borderColor: APP_COLORS.primaryDark }, tripOptionTitle: { flexDirection: 'row', alignItems: 'center', gap: 7 }, tripOptionName: { flex: 1, color: APP_COLORS.textPrimary, fontSize: 13, fontWeight: '700' }, tripOptionNameSelected: { color: APP_COLORS.surface }, tripOptionMeta: { marginTop: 7, color: APP_COLORS.textSecondary, fontSize: 11 }, tripOptionMetaSelected: { color: APP_COLORS.primaryLight }, tripLoading: { height: 70, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 10, borderWidth: 1, borderColor: APP_COLORS.border, backgroundColor: APP_COLORS.surface }, tripMessage: { minHeight: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: APP_COLORS.border, backgroundColor: APP_COLORS.surface }, tripHelp: { color: APP_COLORS.textSecondary, fontSize: 12 }, tripError: { flex: 1, color: APP_COLORS.danger, fontSize: 12 },
+  addressInputWrap: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: APP_COLORS.border, borderRadius: 10, backgroundColor: APP_COLORS.surface }, addressInput: { flex: 1, minHeight: 46, paddingVertical: 8, color: APP_COLORS.textPrimary }, addressSuggestions: { marginTop: 5, borderWidth: 1, borderColor: APP_COLORS.border, borderRadius: 10, overflow: 'hidden', backgroundColor: APP_COLORS.surface }, addressSuggestion: { minHeight: 61, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 9 }, addressSuggestionBorder: { borderBottomWidth: 1, borderBottomColor: APP_COLORS.border }, addressTitle: { color: APP_COLORS.textPrimary, fontSize: 13, fontWeight: '700' }, addressDetail: { marginTop: 2, color: APP_COLORS.textSecondary, fontSize: 11, lineHeight: 15 }, addressError: { marginTop: 5, color: APP_COLORS.danger, fontSize: 11 },
   detail: { padding: 16, paddingBottom: 24 }, detailState: { padding: 13, borderRadius: 11, flexDirection: 'row', justifyContent: 'space-between' }, detailStateText: { fontWeight: '800' }, version: { color: APP_COLORS.textSecondary, fontSize: 11 }, detailSection: { marginTop: 8, padding: 13, backgroundColor: 'white', borderWidth: 1, borderColor: APP_COLORS.border, borderRadius: 12 }, detailRow: { flexDirection: 'row', gap: 12, marginBottom: 9 }, detailLabel: { width: 105, color: APP_COLORS.placeholder, fontSize: 12 }, detailValue: { flex: 1, color: APP_COLORS.textPrimary, fontSize: 12, fontWeight: '600' }, actionHint: { color: APP_COLORS.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 8 }, actionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, actionButton: { flexGrow: 1, minWidth: '47%', backgroundColor: APP_COLORS.primaryDark, borderRadius: 10, paddingHorizontal: 12, minHeight: 48, alignItems: 'center', justifyContent: 'center' }, actionText: { color: 'white', fontWeight: '700', fontSize: 13 }, cancelButton: { backgroundColor: APP_COLORS.dangerLight, borderWidth: 1, borderColor: APP_COLORS.danger }, cancelText: { color: APP_COLORS.danger },
   timeline: { flexDirection: 'row', minHeight: 65 }, timelineRail: { width: 22, alignItems: 'center' }, timelineDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: APP_COLORS.primaryDark, marginTop: 3 }, line: { width: 2, flex: 1, backgroundColor: APP_COLORS.border }, timelineBody: { flex: 1, paddingBottom: 16 }, timelineTitle: { fontWeight: '700', color: APP_COLORS.textPrimary, fontSize: 13 }, timelineTime: { color: APP_COLORS.placeholder, fontSize: 11, marginTop: 3 }, timelineNote: { color: APP_COLORS.textSecondary, fontSize: 12, marginTop: 4 }, timelineEmpty: { color: APP_COLORS.textSecondary, paddingVertical: 15 },
 });
