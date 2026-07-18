@@ -410,7 +410,7 @@ export function DriverManagementScreen() {
   return (
     <ScreenContainer
       title="Quản lý tài xế"
-      subtitle="Danh sách tài xế đồng bộ từ Odoo"
+      subtitle="Danh sách tài xế đồng bộ "
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -489,7 +489,7 @@ export function DriverManagementScreen() {
             <Text style={styles.sectionHint}>
               {appliedSearch
                 ? `Kết quả cho "${appliedSearch}"`
-                : 'Dữ liệu tài xế đang hoạt động từ Odoo'}
+                : 'Dữ liệu tài xế đang hoạt động '}
             </Text>
           </View>
           <Pressable style={styles.addButton} onPress={openAddModal}>

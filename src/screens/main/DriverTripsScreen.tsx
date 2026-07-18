@@ -307,7 +307,7 @@ export function DriverTripsScreen() {
           }
         >
           {loading ? (
-            <StateCard loading message="Đang tải lịch chuyến từ Odoo..." />
+            <StateCard loading message="Đang tải lịch chuyến..." />
           ) : error ? (
             <StateCard message={error} error onRetry={() => loadTrips()} />
           ) : trips.length === 0 ? (

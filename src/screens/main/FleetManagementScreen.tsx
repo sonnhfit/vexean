@@ -435,7 +435,7 @@ export function FleetManagementScreen() {
   return (
     <ScreenContainer
       title="Quản lý đội xe"
-      subtitle="Danh sách xe đồng bộ từ Odoo"
+      subtitle="Danh sách xe đồng bộ"
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -514,7 +514,7 @@ export function FleetManagementScreen() {
             <Text style={styles.sectionHint}>
               {appliedSearch
                 ? `Kết quả cho "${appliedSearch}"`
-                : 'Dữ liệu xe đang hoạt động từ Odoo'}
+                : 'Dữ liệu xe đang hoạt động'}
             </Text>
           </View>
           <Pressable style={styles.addButton} onPress={openAddModal}>

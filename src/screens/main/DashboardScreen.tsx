@@ -1076,7 +1076,7 @@ export function DashboardScreen() {
         {loading ? (
           <View style={styles.stateCard}>
             <ActivityIndicator color={ACTIVE_COLOR} />
-            <Text style={styles.stateText}>Đang tải lịch chạy từ Odoo...</Text>
+            <Text style={styles.stateText}>Đang tải lịch chạy ...</Text>
           </View>
         ) : error ? (
           <View style={styles.stateCard}>

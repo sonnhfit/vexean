@@ -122,7 +122,7 @@ export function CargoBookingsScreen() {
       </View>
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={APP_COLORS.primaryDark} />}
         contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-        {loading ? <Empty loading text="Đang tải hàng hoá từ Odoo..." />
+        {loading ? <Empty loading text="Đang tải hàng hoá ..." />
           : error ? <Empty error text={error} onRetry={() => load()} />
           : shown.length === 0 ? <Empty text="Chưa có kiện hàng phù hợp." />
           : shown.map(item => <CargoCard key={item.id} item={item} onPress={() => setSelected(item)} />)}
@@ -199,8 +199,8 @@ async function searchAddressSuggestions(query: string) {
     q: query, format: 'jsonv2', addressdetails: '1', limit: '8', countrycodes: 'vn', 'accept-language': 'vi',
   });
   const [odooResult, osmResult] = await Promise.allSettled([
-    requestJson<{ results?: OdooLocation[] }>(`/api/nhaxe/odoo/locations/?${odooParams.toString()}`, { method: 'GET', logLabel: 'cargo-pickup-location-search' }),
-    requestJson<OSMAddress[]>(`https://nominatim.openstreetmap.org/search?${osmParams.toString()}`, { method: 'GET', headers: { 'Accept-Language': 'vi' }, logLabel: 'cargo-pickup-osm-search' }),
+    requestJson<{ results?: OdooLocation[] }>(`/api/nhaxe/odoo/locations/?${odooParams.toString()}`, { method: 'GET', logLabel: 'cargo-address-location-search' }),
+    requestJson<OSMAddress[]>(`https://nominatim.openstreetmap.org/search?${osmParams.toString()}`, { method: 'GET', headers: { 'Accept-Language': 'vi' }, logLabel: 'cargo-address-osm-search' }),
   ]);
   if (odooResult.status === 'rejected' && osmResult.status === 'rejected') throw odooResult.reason;
   const odoo = odooResult.status === 'fulfilled' ? odooResult.value.results || [] : [];
@@ -282,7 +282,7 @@ function CreateCargoModal({ visible, role, userName, userPhone, onClose, onCreat
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
         {role !== 'customer' && <TripSelector trips={trips} value={form.trip} required={role === 'driver'} loading={loadingTrips} error={tripsError} onChange={value => set('trip', value)} onRetry={loadTrips} />}
         <Text style={styles.groupTitle}>Người gửi</Text><Field label="Họ tên *" value={form.sender} onChangeText={v => set('sender', v)} /><Field label="Số điện thoại *" value={form.senderPhone} onChangeText={v => set('senderPhone', v)} keyboardType="phone-pad" /><AddressSuggestionField label="Điểm lấy hàng" value={form.pickup} onChange={v => set('pickup', v)} />
-        <Text style={styles.groupTitle}>Người nhận</Text><Field label="Họ tên *" value={form.receiver} onChangeText={v => set('receiver', v)} /><Field label="Số điện thoại *" value={form.receiverPhone} onChangeText={v => set('receiverPhone', v)} keyboardType="phone-pad" /><Field label="Điểm giao hàng" value={form.delivery} onChangeText={v => set('delivery', v)} />
+        <Text style={styles.groupTitle}>Người nhận</Text><Field label="Họ tên *" value={form.receiver} onChangeText={v => set('receiver', v)} /><Field label="Số điện thoại *" value={form.receiverPhone} onChangeText={v => set('receiverPhone', v)} keyboardType="phone-pad" /><AddressSuggestionField label="Điểm giao hàng" value={form.delivery} onChange={v => set('delivery', v)} />
         <Text style={styles.groupTitle}>Kiện hàng</Text><Field label="Mô tả *" value={form.description} onChangeText={v => set('description', v)} multiline /><View style={styles.twoCols}><Field wrap label="Số lượng" value={form.quantity} onChangeText={v => set('quantity', v)} keyboardType="number-pad" /><Field wrap label="Khối lượng (kg)" value={form.weight} onChangeText={v => set('weight', v)} keyboardType="decimal-pad" /></View>
         <View style={styles.twoCols}>{role === 'admin' && <Field wrap label="Cước phí (VND)" value={form.fee} onChangeText={v => set('fee', v)} keyboardType="number-pad" />}<Field wrap label="Thu hộ COD" value={form.cod} onChangeText={v => set('cod', v)} keyboardType="number-pad" /></View>
         <Field label="Lưu ý" value={form.note} onChangeText={v => set('note', v)} multiline />

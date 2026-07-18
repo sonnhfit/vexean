@@ -274,7 +274,7 @@ export function CustomerTicketScreen({ route }: Props) {
         const message =
           ticketError instanceof Error
             ? ticketError.message
-            : 'Không tải được vé từ Odoo.';
+            : 'Không tải được vé.';
         setError(message);
       } finally {
         setLoading(false);

@@ -228,7 +228,7 @@ export function MaintenanceScreen() {
   return (
     <ScreenContainer
       title="Bảo dưỡng"
-      subtitle="Dữ liệu bảo dưỡng đồng bộ từ Odoo"
+      subtitle="Dữ liệu bảo dưỡng đồng bộ"
     >
       <ScrollView
         showsVerticalScrollIndicator={false}

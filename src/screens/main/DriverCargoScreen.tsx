@@ -191,7 +191,7 @@ export function DriverCargoScreen() {
         }
       >
         {loading ? (
-          <StateCard loading message="Đang tải danh sách hàng từ Odoo..." />
+          <StateCard loading message="Đang tải danh sách hàng ..." />
         ) : error ? (
           <StateCard error message={error} onRetry={() => loadCargo()} />
         ) : filteredCargo.length === 0 ? (
