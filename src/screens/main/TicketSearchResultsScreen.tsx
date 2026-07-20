@@ -1,4 +1,4 @@
-import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -19,7 +19,6 @@ import { APP_COLORS } from '../../theme/colors';
 import { RootStackParamList } from '../../types/navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TicketSearchResults'>;
-type IconName = ComponentProps<typeof Ionicons>['name'];
 type OdooRelation = false | [number, string];
 
 type OdooTripSummary = {
@@ -193,15 +192,19 @@ export function TicketSearchResultsScreen({ route, navigation }: Props) {
       setError(null);
 
       try {
-        const query = new URLSearchParams({
-          route_id: String(params.routeId),
-          date_from: params.travelDate,
-          date_to: params.travelDate,
-          states: 'draft,confirmed',
-          limit: '50',
-        });
+        const showAllActiveTrips = params.showAllActiveTrips || !params.routeId;
+        const query = showAllActiveTrips
+          ? new URLSearchParams({ page: '1', page_size: '20' })
+          : new URLSearchParams({
+              route_id: String(params.routeId),
+              date_from: params.travelDate,
+              date_to: params.travelDate,
+              states: 'draft,confirmed',
+              page: '1',
+              page_size: '20',
+            });
         const data = await requestJson<TripsResponse>(
-          `/api/nhaxe/odoo/trips/?${query.toString()}`,
+          `/api/nhaxe/odoo/active-trips/?${query.toString()}`,
           {
             method: 'GET',
             auth: true,
@@ -225,7 +228,7 @@ export function TicketSearchResultsScreen({ route, navigation }: Props) {
         setRefreshing(false);
       }
     },
-    [params.routeId, params.travelDate, showToast],
+    [params.routeId, params.showAllActiveTrips, params.travelDate, showToast],
   );
 
   useEffect(() => {
@@ -256,35 +259,6 @@ export function TicketSearchResultsScreen({ route, navigation }: Props) {
             </View>
           </View>
         </View>
-      </View>
-
-      <View style={styles.priceCompare}>
-        <PriceMode
-          icon="bus"
-          price={
-            params.minPrice
-              ? formatTripPrice(params.minPrice)
-              : `${params.tripCount || tripCards.length} chuyến`
-          }
-          duration={params.serviceType || 'coach'}
-          active
-        />
-        <View style={styles.transferMode}>
-          <View style={styles.discountPill}>
-            <Text style={styles.discountText}>
-              {params.tripCount || tripCards.length}
-            </Text>
-          </View>
-          <Ionicons name="airplane" size={28} color="#111111" />
-          <View style={styles.skeletonLine} />
-          <View style={[styles.skeletonLine, styles.skeletonLineShort]} />
-        </View>
-        <PriceMode
-          icon="train"
-          price={params.maxPrice ? formatTripPrice(params.maxPrice) : 'Odoo'}
-          duration="giá cao nhất"
-          discount="API"
-        />
       </View>
 
       <ScrollView
@@ -330,6 +304,15 @@ export function TicketSearchResultsScreen({ route, navigation }: Props) {
           </View>
         ) : null}
 
+        {!loading && !error && params.showAllActiveTrips && tripCards.length ? (
+          <View style={styles.fallbackNotice}>
+            <Ionicons name="information-circle-outline" size={22} color={APP_COLORS.primaryDark} />
+            <Text style={styles.fallbackNoticeText}>
+              Không có chuyến khớp hoàn toàn. Dưới đây là các chuyến hiệu lực.
+            </Text>
+          </View>
+        ) : null}
+
         {!loading && !error
           ? tripCards.map((trip, index) => (
               <TripCard
@@ -343,43 +326,6 @@ export function TicketSearchResultsScreen({ route, navigation }: Props) {
       </ScrollView>
 
     </SafeAreaView>
-  );
-}
-
-function PriceMode({
-  icon,
-  price,
-  duration,
-  active,
-  discount,
-}: {
-  icon: IconName;
-  price: string;
-  duration: string;
-  active?: boolean;
-  discount?: string;
-}) {
-  return (
-    <View style={[styles.priceMode, active && styles.priceModeActive]}>
-      {discount ? (
-        <View style={styles.discountPill}>
-          <Text style={styles.discountText}>{discount}</Text>
-        </View>
-      ) : null}
-      <Ionicons
-        name={icon}
-        size={34}
-        color={active ? APP_COLORS.primaryDark : '#222222'}
-      />
-      <View>
-        <Text style={[styles.priceModePrice, active && styles.priceModePriceActive]}>
-          {price}
-        </Text>
-        <Text style={[styles.priceModeDuration, active && styles.priceModeDurationActive]}>
-          {duration}
-        </Text>
-      </View>
-    </View>
   );
 }
 
@@ -494,66 +440,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textDecorationLine: 'underline',
   },
-  priceCompare: {
-    height: 72,
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    backgroundColor: APP_COLORS.surface,
-  },
-  priceMode: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  priceModeActive: {
-    borderBottomWidth: 3,
-    borderBottomColor: APP_COLORS.primaryDark,
-  },
-  priceModePrice: {
-    color: '#111111',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  priceModePriceActive: {
-    color: APP_COLORS.primaryDark,
-  },
-  priceModeDuration: {
-    color: '#333333',
-    fontSize: 12,
-  },
-  priceModeDurationActive: {
-    color: APP_COLORS.primary,
-  },
-  transferMode: {
-    flex: 0.7,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  discountPill: {
-    borderRadius: 9,
-    paddingHorizontal: 8,
-    paddingVertical: 1,
-    backgroundColor: '#ef5350',
-  },
-  discountText: {
-    color: APP_COLORS.surface,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  skeletonLine: {
-    position: 'absolute',
-    right: 6,
-    width: 48,
-    height: 13,
-    borderRadius: 7,
-    backgroundColor: '#eeeeee',
-  },
-  skeletonLineShort: {
-    top: 52,
-    width: 42,
-  },
   contentContainer: {
     gap: 14,
     paddingHorizontal: 18,
@@ -571,6 +457,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#dddddd',
     backgroundColor: APP_COLORS.surface,
+  },
+  fallbackNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#e8f1ef',
+  },
+  fallbackNoticeText: {
+    flex: 1,
+    color: APP_COLORS.textPrimary,
+    fontSize: 13,
+    lineHeight: 18,
   },
   stateTitle: {
     color: APP_COLORS.textPrimary,

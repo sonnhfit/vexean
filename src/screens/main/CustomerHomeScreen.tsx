@@ -44,16 +44,22 @@ const popularRoutes = [
   {
     id: 'ha-long-ha-noi',
     title: 'Hạ Long → Hà Nội',
+    originName: 'Hạ Long',
+    destinationName: 'Hà Nội',
     color: '#4d8ea1',
   },
   {
     id: 'cam-pha-ha-noi',
     title: 'Cẩm Phả → Hà Nội',
+    originName: 'Cẩm Phả',
+    destinationName: 'Hà Nội',
     color: '#5c9f92',
   },
     {
     id: 'quang-yen-ha-noi',
     title: 'Quảng Yên → Hà Nội',
+    originName: 'Quảng Yên',
+    destinationName: 'Hà Nội',
     color: '#1bbc9c',
   },
 ];
@@ -146,6 +152,10 @@ type CustomerHomeResponse = {
     server_time?: string;
     updated_at?: string;
   };
+};
+
+type CustomerLocationsResponse = {
+  results: CustomerHomeLocation[];
 };
 
 type CustomerRouteSearchResponse = {
@@ -476,10 +486,15 @@ export function CustomerHomeScreen() {
       const routeSearch = await findRoute(activeSearch);
       const selectedRoute = routeSearch.routes[0];
       if (!routeSearch.summary.available || !selectedRoute) {
-        showToast({
-          type: 'info',
-          title: 'Chưa có chuyến phù hợp',
-          message: 'Bạn thử đổi ngày đi hoặc tuyến đường khác nhé.',
+        navigation.navigate('TicketSearchResults', {
+          showAllActiveTrips: true,
+          originName: activeSearch.origin?.name || 'Điểm đi',
+          destinationName: activeSearch.destination?.name || 'Điểm đến',
+          travelDate: activeSearch.travel_date,
+          returnDate: roundTrip ? activeSearch.return_date : null,
+          serviceType: selectedServiceType,
+          passengers: routeSearch.query.passengers,
+          tripCount: 0,
         });
         return;
       }
@@ -569,6 +584,72 @@ export function CustomerHomeScreen() {
     if (recentSearch.service_type) {
       setSelectedServiceType(recentSearch.service_type);
     }
+  };
+
+  const selectPopularRoute = async (popularRoute: (typeof popularRoutes)[number]) => {
+    const normalize = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .toLowerCase()
+        .trim();
+    const apiRoute = homeData?.popular_routes.find(item => {
+      const originName = item.origin?.name || '';
+      const destinationName = item.destination?.name || '';
+      return (
+        normalize(originName) === normalize(popularRoute.originName) &&
+        normalize(destinationName) === normalize(popularRoute.destinationName)
+      );
+    });
+
+    let origin = apiRoute?.origin;
+    let destination = apiRoute?.destination;
+
+    try {
+      if (!origin || !destination) {
+        const loadLocation = async (name: string) => {
+          const query = new URLSearchParams({ search: name, limit: '30' });
+          const data = await requestJson<CustomerLocationsResponse>(
+            `/api/nhaxe/odoo/locations/?${query.toString()}`,
+            { method: 'GET', auth: true, logLabel: 'popular-route-location' },
+          );
+          return (data.results || []).find(
+            location => normalize(location.name) === normalize(name),
+          );
+        };
+        [origin, destination] = await Promise.all([
+          loadLocation(popularRoute.originName),
+          loadLocation(popularRoute.destinationName),
+        ]);
+      }
+    } catch {
+      origin = undefined;
+      destination = undefined;
+    }
+
+    if (!origin || !destination) {
+      showToast({
+        type: 'info',
+        title: 'Chưa tải được thông tin tuyến',
+        message: 'Không tìm thấy địa điểm Odoo tương ứng với tuyến này.',
+      });
+      return;
+    }
+
+    setSelectedSearch(current => ({
+      ...(current || homeData?.default_search || {
+        origin: null,
+        destination: null,
+        travel_date: formatDateValue(new Date()),
+        round_trip: false,
+        return_date: null,
+      }),
+      origin,
+      destination,
+      round_trip: roundTrip,
+    }));
+    setRouteSwapped(false);
   };
 
   const selectTravelDate = (travelDate: string) => {
@@ -772,15 +853,18 @@ export function CustomerHomeScreen() {
           contentContainerStyle={styles.popularList}
         >
           {renderedPopularRoutes.map(popularRoute => (
-            <View
+            <Pressable
               key={popularRoute.id}
               style={[
                 styles.popularCard,
                 { backgroundColor: popularRoute.color },
               ]}
+              onPress={() => selectPopularRoute(popularRoute)}
+              accessibilityRole="button"
+              accessibilityLabel={`Chọn tuyến ${popularRoute.title}`}
             >
               <Text style={styles.popularText}>{popularRoute.title}</Text>
-            </View>
+            </Pressable>
           ))}
         </ScrollView>
       </ScrollView>

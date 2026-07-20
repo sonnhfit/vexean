@@ -36,7 +36,8 @@ export type RootStackParamList = {
     initialTravelDate?: string;
   } | undefined;
   TicketSearchResults: {
-    routeId: number;
+    routeId?: number;
+    showAllActiveTrips?: boolean;
     originName: string;
     destinationName: string;
     travelDate: string;
