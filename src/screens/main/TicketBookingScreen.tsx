@@ -149,6 +149,13 @@ const seatStateMeta: Record<
 };
 
 const MAX_SEATS_PER_BOOKING = 20;
+const NOTE_SUGGESTIONS = [
+  'Gọi trước khi đón',
+  'Đón tận nơi',
+  'Có hành lý',
+  'Có trẻ em',
+  'Cần hỗ trợ',
+];
 
 function padDatePart(value: number) {
   return String(value).padStart(2, '0');
@@ -324,7 +331,8 @@ export function TicketBookingScreen({ route, navigation }: Props) {
     initialPhone || linkedPhone,
   );
   const [passengerIdNumber, setPassengerIdNumber] = useState('');
-  const [note, setNote] = useState('Khach goi tong dai');
+  const [selectedNoteSuggestions, setSelectedNoteSuggestions] = useState<string[]>([]);
+  const [customNote, setCustomNote] = useState('');
   const [loadingTrips, setLoadingTrips] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -611,6 +619,14 @@ export function TicketBookingScreen({ route, navigation }: Props) {
     });
   };
 
+  const toggleNoteSuggestion = (suggestion: string) => {
+    setSelectedNoteSuggestions(current =>
+      current.includes(suggestion)
+        ? current.filter(item => item !== suggestion)
+        : [...current, suggestion],
+    );
+  };
+
   const submitBooking = async () => {
     Keyboard.dismiss();
 
@@ -634,7 +650,9 @@ export function TicketBookingScreen({ route, navigation }: Props) {
         passenger_phone: passengerPhone.trim(),
         ...(passengerId ? { passenger_id_number: passengerId } : {}),
         create_partner: true,
-        note: note.trim(),
+        note: [...selectedNoteSuggestions, customNote.trim()]
+          .filter(Boolean)
+          .join('. '),
       };
       const data = await requestJson<TicketBookingResponse>(
         '/api/nhaxe/odoo/book-ticket/',
@@ -924,13 +942,39 @@ export function TicketBookingScreen({ route, navigation }: Props) {
             </View>
             <View style={styles.formGroup}>
               <Text style={styles.label}>Ghi chú</Text>
+              <View style={styles.noteSuggestions}>
+                {NOTE_SUGGESTIONS.map(suggestion => {
+                  const selected = selectedNoteSuggestions.includes(suggestion);
+                  return (
+                    <Pressable
+                      key={suggestion}
+                      style={[
+                        styles.noteSuggestion,
+                        selected && styles.noteSuggestionSelected,
+                      ]}
+                      onPress={() => toggleNoteSuggestion(suggestion)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: selected }}
+                    >
+                      <Text
+                        style={[
+                          styles.noteSuggestionText,
+                          selected && styles.noteSuggestionTextSelected,
+                        ]}
+                      >
+                        {suggestion}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
               <TextInput
-                value={note}
-                onChangeText={setNote}
+                value={customNote}
+                onChangeText={setCustomNote}
                 onSubmitEditing={Keyboard.dismiss}
                 returnKeyType="done"
                 blurOnSubmit
-                placeholder="Khach goi tong dai"
+                placeholder="Nhập ghi chú khác (không bắt buộc)"
                 placeholderTextColor={APP_COLORS.placeholder}
                 style={[styles.input, styles.noteInput]}
                 multiline
@@ -1386,6 +1430,32 @@ const styles = StyleSheet.create({
   noteInput: {
     minHeight: 68,
     textAlignVertical: 'top',
+  },
+  noteSuggestions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  noteSuggestion: {
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: APP_COLORS.surface,
+  },
+  noteSuggestionSelected: {
+    borderColor: APP_COLORS.primaryDark,
+    backgroundColor: APP_COLORS.primaryDark,
+  },
+  noteSuggestionText: {
+    color: APP_COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  noteSuggestionTextSelected: {
+    color: APP_COLORS.surface,
   },
   selectedBox: {
     borderWidth: 1,

@@ -44,6 +44,8 @@ const popularRoutes = [
   {
     id: 'ha-long-ha-noi',
     title: 'Hạ Long → Hà Nội',
+    originId: 10004,
+    destinationId: 10001,
     originName: 'Hạ Long',
     destinationName: 'Hà Nội',
     color: '#4d8ea1',
@@ -51,6 +53,8 @@ const popularRoutes = [
   {
     id: 'cam-pha-ha-noi',
     title: 'Cẩm Phả → Hà Nội',
+    originId: 10003,
+    destinationId: 10001,
     originName: 'Cẩm Phả',
     destinationName: 'Hà Nội',
     color: '#5c9f92',
@@ -58,6 +62,8 @@ const popularRoutes = [
     {
     id: 'quang-yen-ha-noi',
     title: 'Quảng Yên → Hà Nội',
+    originId: 10005,
+    destinationId: 10001,
     originName: 'Quảng Yên',
     destinationName: 'Hà Nội',
     color: '#1bbc9c',
@@ -594,12 +600,47 @@ export function CustomerHomeScreen() {
         .replace(/đ/g, 'd')
         .toLowerCase()
         .trim();
+    const namesMatch = (left: string, right: string) => {
+      const normalizedLeft = normalize(left);
+      const normalizedRight = normalize(right);
+      return (
+        normalizedLeft === normalizedRight ||
+        normalizedLeft.includes(normalizedRight) ||
+        normalizedRight.includes(normalizedLeft)
+      );
+    };
+
+    // Fill the form immediately, then replace the temporary IDs with Odoo IDs.
+    const updateSelectedRoute = (
+      origin: CustomerHomeLocation,
+      destination: CustomerHomeLocation,
+    ) => {
+      setSelectedSearch(current => ({
+        ...(current || homeData?.default_search || {
+          origin: null,
+          destination: null,
+          travel_date: formatDateValue(new Date()),
+          round_trip: false,
+          return_date: null,
+        }),
+        origin,
+        destination,
+        round_trip: roundTrip,
+      }));
+      setRouteSwapped(false);
+    };
+
+    updateSelectedRoute(
+      { id: popularRoute.originId, name: popularRoute.originName },
+      { id: popularRoute.destinationId, name: popularRoute.destinationName },
+    );
+
     const apiRoute = homeData?.popular_routes.find(item => {
       const originName = item.origin?.name || '';
       const destinationName = item.destination?.name || '';
       return (
-        normalize(originName) === normalize(popularRoute.originName) &&
-        normalize(destinationName) === normalize(popularRoute.destinationName)
+        namesMatch(originName, popularRoute.originName) &&
+        namesMatch(destinationName, popularRoute.destinationName)
       );
     });
 
@@ -614,9 +655,8 @@ export function CustomerHomeScreen() {
             `/api/nhaxe/odoo/locations/?${query.toString()}`,
             { method: 'GET', auth: true, logLabel: 'popular-route-location' },
           );
-          return (data.results || []).find(
-            location => normalize(location.name) === normalize(name),
-          );
+          const locations = data.results || [];
+          return locations.find(location => namesMatch(location.name, name)) || locations[0];
         };
         [origin, destination] = await Promise.all([
           loadLocation(popularRoute.originName),
@@ -637,19 +677,7 @@ export function CustomerHomeScreen() {
       return;
     }
 
-    setSelectedSearch(current => ({
-      ...(current || homeData?.default_search || {
-        origin: null,
-        destination: null,
-        travel_date: formatDateValue(new Date()),
-        round_trip: false,
-        return_date: null,
-      }),
-      origin,
-      destination,
-      round_trip: roundTrip,
-    }));
-    setRouteSwapped(false);
+    updateSelectedRoute(origin, destination);
   };
 
   const selectTravelDate = (travelDate: string) => {
