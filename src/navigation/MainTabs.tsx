@@ -151,6 +151,7 @@ export function MainTabs() {
         component={isDriver ? DriverTripsScreen : DashboardScreen}
         options={{
           title: isDriver ? 'Chuyến của tôi' : 'Trang chủ',
+          headerShown: !isDriver,
           tabBarIcon: dashboardIcon,
         }}
       />

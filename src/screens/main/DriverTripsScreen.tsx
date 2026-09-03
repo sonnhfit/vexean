@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Image,
+  Linking,
   Modal,
+  PanResponder,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -57,6 +61,14 @@ type DriverPassenger = {
   state?: string;
   checkin_time?: string | false | null;
   checkout_time?: string | false | null;
+  price?: number | string;
+  total_amount?: number | string;
+  payment_method?: 'cash' | 'transfer' | string;
+  payment_status?: string;
+  note?: string;
+  pickup_latitude?: number;
+  pickup_longitude?: number;
+  cancelled_reason?: string;
 };
 
 type DriverCargo = {
@@ -81,8 +93,22 @@ type TripListResponse =
   | DriverTrip[]
   | { results?: DriverTrip[]; trips?: DriverTrip[] };
 type TripDetailResponse = DriverTrip | { trip?: DriverTrip };
+type PaymentResponse = {
+  ticket?: DriverPassenger;
+  payment_method?: 'cash' | 'transfer';
+  qr_code_url?: string;
+  amount?: number;
+  transfer_note?: string;
+};
 
 const ACTIVE_STATES = 'confirmed,boarding,running';
+const CANCELLATION_REASONS = [
+  'Khách đổi lịch',
+  'Khách không nghe máy',
+  'Khách không có mặt tại điểm đón',
+  'Khách đã đi xe khác',
+  'Khách báo không đi',
+];
 
 function formatQueryDate(date: Date) {
   const year = date.getFullYear();
@@ -184,6 +210,64 @@ function stateLabel(state?: string) {
   return state ? labels[state] || state : 'Chưa cập nhật';
 }
 
+function formatDepartureTime(value?: string) {
+  const date = parseDate(value);
+  return date
+    ? date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    : '--:--';
+}
+
+function formatMoney(value?: number | string) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return '0k';
+  }
+  return `${Math.round(amount / 1000)}k`;
+}
+
+function SwipeToCancelRow({
+  children,
+  onCancel,
+}: PropsWithChildren<{ onCancel: () => void }>) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        gesture.dx < -8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+      onPanResponderMove: (_, gesture) => {
+        translateX.setValue(Math.max(-116, Math.min(0, gesture.dx)));
+      },
+      onPanResponderRelease: (_, gesture) => {
+        Animated.spring(translateX, {
+          toValue: gesture.dx < -52 ? -116 : 0,
+          useNativeDriver: true,
+        }).start();
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(translateX, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
+      },
+    }),
+  ).current;
+
+  return (
+    <View style={styles.swipeContainer}>
+      <Pressable style={styles.cancelReveal} onPress={onCancel}>
+        <Ionicons name="close-circle-outline" size={22} color={APP_COLORS.surface} />
+        <Text style={styles.cancelRevealText}>Khách đã huỷ</Text>
+      </Pressable>
+      <Animated.View
+        style={{ transform: [{ translateX }] }}
+        {...panResponder.panHandlers}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
 export function DriverTripsScreen() {
   const [trips, setTrips] = useState<DriverTrip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,6 +277,16 @@ export function DriverTripsScreen() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [actionKey, setActionKey] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<'waiting' | 'picked'>('waiting');
+  const [paymentPassenger, setPaymentPassenger] =
+    useState<DriverPassenger | null>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [qrPayment, setQrPayment] = useState<PaymentResponse | null>(null);
+  const [pickupPassenger, setPickupPassenger] =
+    useState<DriverPassenger | null>(null);
+  const [cancelPassenger, setCancelPassenger] =
+    useState<DriverPassenger | null>(null);
   const scheduleDate = formatQueryDate(new Date());
 
   const loadTrips = useCallback(
@@ -250,8 +344,53 @@ export function DriverTripsScreen() {
   }, []);
 
   const openTrip = (trip: DriverTrip) => {
+    setDetailTab('waiting');
     setSelectedTrip(trip);
     loadTripDetail(trip.id);
+  };
+
+  const choosePaymentMethod = async (paymentMethod: 'cash' | 'transfer') => {
+    const ticketId = paymentPassenger && passengerId(paymentPassenger);
+    if (!selectedTrip || !ticketId) {
+      return;
+    }
+    setPaymentLoading(true);
+    setPaymentError(null);
+    setQrPayment(null);
+    try {
+      const data = await requestJson<PaymentResponse>(
+        `/api/nhaxe/odoo/driver/me/trips/${selectedTrip.id}/passengers/${ticketId}/payment/`,
+        {
+          method: 'POST',
+          auth: true,
+          body: { payment_method: paymentMethod },
+          logLabel: 'driver-passenger-payment',
+        },
+      );
+      if (paymentMethod === 'transfer') {
+        setQrPayment(data);
+      } else {
+        setPaymentPassenger(null);
+        await loadTripDetail(selectedTrip.id);
+      }
+    } catch (paymentRequestError) {
+      setPaymentError(
+        paymentRequestError instanceof Error
+          ? paymentRequestError.message
+          : 'Không tạo được thông tin thanh toán.',
+      );
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  const closePayment = () => {
+    setPaymentPassenger(null);
+    setPaymentError(null);
+    setQrPayment(null);
+    if (selectedTrip) {
+      loadTripDetail(selectedTrip.id);
+    }
   };
 
   const updatePassenger = async (
@@ -283,9 +422,340 @@ export function DriverTripsScreen() {
     }
   };
 
+  const cancelPassengerBooking = async (reason: string) => {
+    const ticketId = cancelPassenger && passengerId(cancelPassenger);
+    if (!selectedTrip || !ticketId) {
+      return;
+    }
+    const key = `${ticketId}-cancel`;
+    setActionKey(key);
+    setDetailError(null);
+    try {
+      await requestJson<unknown>(
+        `/api/nhaxe/odoo/driver/me/trips/${selectedTrip.id}/passengers/${ticketId}/cancel/`,
+        {
+          method: 'POST',
+          auth: true,
+          body: { reason },
+          logLabel: 'driver-passenger-cancel',
+        },
+      );
+      setCancelPassenger(null);
+      await loadTripDetail(selectedTrip.id);
+    } catch (cancelError) {
+      setDetailError(
+        cancelError instanceof Error
+          ? cancelError.message
+          : 'Không huỷ được vé của khách.',
+      );
+      setCancelPassenger(null);
+    } finally {
+      setActionKey(null);
+    }
+  };
+
+  const callPassenger = async (phone: string) => {
+    if (phone === 'Chưa có SĐT') {
+      setDetailError('Khách chưa có số điện thoại.');
+      return;
+    }
+    const normalizedPhone = phone.replace(/[^+\d]/g, '');
+    try {
+      await Linking.openURL(`tel:${normalizedPhone}`);
+    } catch {
+      setDetailError('Không mở được ứng dụng gọi điện.');
+    }
+  };
+
   const passengers = selectedTrip?.passenger_pickup_schedule || [];
-  const cargo = selectedTrip?.cargo_to_pickup || [];
-  const summary = selectedTrip?.summary;
+
+  if (selectedTrip) {
+    const activePassengers = passengers.filter(
+      passenger => passenger.state !== 'cancelled',
+    );
+    const pickedUpCount =
+      activePassengers.filter(
+        item => Boolean(item.checkin_time) || item.state === 'boarded',
+      ).length;
+    const waitingCount = Math.max(0, activePassengers.length - pickedUpCount);
+    const displayedPassengers = activePassengers.filter(passenger => {
+      const checkedIn =
+        Boolean(passenger.checkin_time) || passenger.state === 'boarded';
+      return detailTab === 'picked' ? checkedIn : !checkedIn;
+    });
+
+    return (
+      <SafeAreaView style={styles.detailScreen}>
+        <View style={styles.detailHeader}>
+          <Pressable
+            accessibilityLabel="Quay lại danh sách chuyến"
+            style={styles.backButton}
+            onPress={() => setSelectedTrip(null)}
+          >
+            <Ionicons name="chevron-back" size={25} color={APP_COLORS.surface} />
+          </Pressable>
+          <Text style={styles.detailHeading} numberOfLines={1}>
+            {formatDepartureTime(selectedTrip.departure_time)} | {pickedUpCount} đón | {waitingCount} chưa
+          </Text>
+          <Pressable
+            accessibilityLabel="Tải lại chi tiết chuyến"
+            style={styles.calendarButton}
+            onPress={() => loadTripDetail(selectedTrip.id)}
+          >
+            <Ionicons name="refresh" size={25} color={APP_COLORS.surface} />
+          </Pressable>
+        </View>
+
+        <View style={styles.detailTabs}>
+          <Pressable
+            style={styles.detailTab}
+            onPress={() => setDetailTab('waiting')}
+          >
+            <Text style={[styles.detailTabText, detailTab === 'waiting' && styles.detailTabTextActive]}>
+              Khách chờ đón
+            </Text>
+            {detailTab === 'waiting' ? <View style={styles.detailTabIndicator} /> : null}
+          </Pressable>
+          <Pressable style={styles.detailTab} onPress={() => setDetailTab('picked')}>
+            <Text style={[styles.detailTabText, detailTab === 'picked' && styles.detailTabTextActive]}>
+              Đã đón ({pickedUpCount})
+            </Text>
+            {detailTab === 'picked' ? <View style={styles.detailTabIndicator} /> : null}
+          </Pressable>
+        </View>
+
+        {detailLoading && passengers.length === 0 ? (
+          <StateCard loading message="Đang tải lịch đón khách..." />
+        ) : (
+          <ScrollView
+            style={styles.passengerList}
+            contentContainerStyle={styles.passengerListContent}
+            showsVerticalScrollIndicator={false}
+            alwaysBounceVertical
+            refreshControl={
+              <RefreshControl
+                refreshing={detailLoading}
+                onRefresh={() => loadTripDetail(selectedTrip.id)}
+                tintColor={APP_COLORS.primaryDark}
+              />
+            }
+          >
+            <Text style={styles.tripReference} numberOfLines={1}>
+              {selectedTrip.name || `Chuyến #${selectedTrip.id}`} - {getRouteName(selectedTrip)}
+            </Text>
+            {detailError ? (
+              <View style={styles.errorBox}><Text style={styles.errorText}>{detailError}</Text></View>
+            ) : null}
+            {displayedPassengers.length === 0 ? (
+              <Text style={styles.emptyText}>
+                {detailTab === 'picked'
+                  ? 'Chưa có hành khách nào đã đón.'
+                  : 'Không còn hành khách chờ đón.'}
+              </Text>
+            ) : (
+              displayedPassengers.map((passenger, index) => {
+                const id = passengerId(passenger);
+                const checkedIn = Boolean(passenger.checkin_time) || passenger.state === 'boarded';
+                const checkedOut = Boolean(passenger.checkout_time);
+                const phone = passenger.phone_number || passenger.phone || 'Chưa có SĐT';
+                const row = (
+                  <View style={styles.pickupRow}>
+                    <View style={styles.pickupRowMain}>
+                      <View style={styles.pickupInfo}>
+                        <Text style={styles.pickupLocation}>
+                          {passenger.pickup_location || 'Chưa cập nhật điểm đón'}
+                        </Text>
+                        <Pressable onPress={() => callPassenger(phone)}>
+                          <Text style={styles.phoneNumber}>{phone}</Text>
+                        </Pressable>
+                        <Text style={styles.ticketLine}>
+                          Ghế: {String(passengerSeat(passenger))}{'  '}
+                          <Text style={styles.totalText}>
+                            Tổng: {formatMoney(passenger.total_amount ?? passenger.price)}
+                          </Text>
+                        </Text>
+                        <Text style={styles.passengerMeta}>
+                          TC: {passengerName(passenger)}
+                        </Text>
+                      </View>
+                      {id ? (
+                        <Pressable
+                          disabled={Boolean(actionKey) || checkedOut}
+                          style={[
+                            styles.pickupButton,
+                            checkedIn && styles.dropoffButton,
+                            checkedOut && styles.disabled,
+                          ]}
+                          onPress={() => {
+                            if (checkedIn) {
+                              updatePassenger(passenger, 'check-out');
+                            } else {
+                              setPickupPassenger(passenger);
+                            }
+                          }}
+                        >
+                          {actionKey === `${id}-${checkedIn ? 'check-out' : 'check-in'}` ? (
+                            <ActivityIndicator size="small" color={APP_COLORS.surface} />
+                          ) : (
+                            <Text style={styles.pickupButtonText}>
+                              {checkedOut ? 'Đã trả' : checkedIn ? 'Trả' : 'Đón'}
+                            </Text>
+                          )}
+                        </Pressable>
+                      ) : null}
+                    </View>
+                    <Pressable
+                      style={styles.paymentButton}
+                      onPress={() => {
+                        setPaymentError(null);
+                        setQrPayment(null);
+                        setPaymentPassenger(passenger);
+                      }}
+                    >
+                      <Ionicons name="wallet-outline" size={16} color={APP_COLORS.primaryDark} />
+                      <Text style={styles.paymentButtonText}>
+                        {passenger.payment_method === 'transfer'
+                          ? 'Chuyển khoản'
+                          : 'Chọn thanh toán'}
+                        </Text>
+                    </Pressable>
+                  </View>
+                );
+                return checkedIn ? (
+                  <View key={id || `${phone}-${index}`}>{row}</View>
+                ) : (
+                  <SwipeToCancelRow
+                    key={id || `${phone}-${index}`}
+                    onCancel={() => setCancelPassenger(passenger)}
+                  >
+                    {row}
+                  </SwipeToCancelRow>
+                );
+              })
+            )}
+          </ScrollView>
+        )}
+        <Modal
+          visible={Boolean(pickupPassenger)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPickupPassenger(null)}
+        >
+          <View style={styles.centeredOverlay}>
+            <View style={styles.confirmDialog}>
+              <Ionicons name="person-add-outline" size={38} color={APP_COLORS.primaryDark} />
+              <Text style={styles.confirmTitle}>Xác nhận đã đón khách?</Text>
+              <Text style={styles.confirmMessage}>
+                {pickupPassenger ? passengerName(pickupPassenger) : ''}
+              </Text>
+              <View style={styles.confirmActions}>
+                <Pressable style={styles.dialogCancelButton} onPress={() => setPickupPassenger(null)}>
+                  <Text style={styles.dialogCancelText}>Quay lại</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.dialogConfirmButton}
+                  onPress={() => {
+                    if (pickupPassenger) {
+                      const passenger = pickupPassenger;
+                      setPickupPassenger(null);
+                      updatePassenger(passenger, 'check-in');
+                    }
+                  }}
+                >
+                  <Text style={styles.dialogConfirmText}>Xác nhận đón</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+        <Modal
+          visible={Boolean(cancelPassenger)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setCancelPassenger(null)}
+        >
+          <View style={styles.paymentOverlay}>
+            <View style={styles.paymentSheet}>
+              <View style={styles.paymentHeader}>
+                <Text style={styles.paymentTitle}>Lý do khách huỷ</Text>
+                <Pressable onPress={() => setCancelPassenger(null)}>
+                  <Ionicons name="close" size={24} color={APP_COLORS.textPrimary} />
+                </Pressable>
+              </View>
+              <Text style={styles.paymentPassengerName}>
+                {cancelPassenger ? passengerName(cancelPassenger) : ''}
+              </Text>
+              <View style={styles.reasonList}>
+                {CANCELLATION_REASONS.map(reason => (
+                  <Pressable
+                    key={reason}
+                    disabled={Boolean(actionKey)}
+                    style={styles.reasonButton}
+                    onPress={() => cancelPassengerBooking(reason)}
+                  >
+                    <Text style={styles.reasonText}>{reason}</Text>
+                    <Ionicons name="chevron-forward" size={18} color={APP_COLORS.textSecondary} />
+                  </Pressable>
+                ))}
+              </View>
+              {actionKey?.endsWith('-cancel') ? (
+                <ActivityIndicator style={styles.paymentLoader} color={APP_COLORS.danger} />
+              ) : null}
+            </View>
+          </View>
+        </Modal>
+        <Modal
+          visible={Boolean(paymentPassenger)}
+          transparent
+          animationType="fade"
+          onRequestClose={closePayment}
+        >
+          <View style={styles.paymentOverlay}>
+            <View style={styles.paymentSheet}>
+              <View style={styles.paymentHeader}>
+                <Text style={styles.paymentTitle}>Hình thức thanh toán</Text>
+                <Pressable onPress={closePayment}>
+                  <Ionicons name="close" size={24} color={APP_COLORS.textPrimary} />
+                </Pressable>
+              </View>
+              <Text style={styles.paymentPassengerName}>
+                {paymentPassenger ? passengerName(paymentPassenger) : ''} ·{' '}
+                {formatMoney(paymentPassenger?.total_amount ?? paymentPassenger?.price)}
+              </Text>
+              {paymentError ? <Text style={styles.paymentError}>{paymentError}</Text> : null}
+              {qrPayment?.qr_code_url ? (
+                <View style={styles.qrWrap}>
+                  <Image source={{ uri: qrPayment.qr_code_url }} style={styles.qrImage} resizeMode="contain" />
+                  <Text style={styles.qrHint}>Quét mã để chuyển khoản</Text>
+                  <Text style={styles.transferNote}>Nội dung: {qrPayment.transfer_note}</Text>
+                </View>
+              ) : (
+                <View style={styles.paymentOptions}>
+                  <Pressable
+                    disabled={paymentLoading}
+                    style={styles.paymentOption}
+                    onPress={() => choosePaymentMethod('cash')}
+                  >
+                    <Ionicons name="cash-outline" size={27} color={APP_COLORS.success} />
+                    <Text style={styles.paymentOptionText}>Tiền mặt</Text>
+                  </Pressable>
+                  <Pressable
+                    disabled={paymentLoading}
+                    style={styles.paymentOption}
+                    onPress={() => choosePaymentMethod('transfer')}
+                  >
+                    <Ionicons name="qr-code-outline" size={27} color={APP_COLORS.info} />
+                    <Text style={styles.paymentOptionText}>Chuyển khoản</Text>
+                  </Pressable>
+                </View>
+              )}
+              {paymentLoading ? <ActivityIndicator style={styles.paymentLoader} color={APP_COLORS.primaryDark} /> : null}
+            </View>
+          </View>
+        </Modal>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <>
@@ -362,186 +832,6 @@ export function DriverTripsScreen() {
         </ScrollView>
       </ScreenContainer>
 
-      <Modal
-        visible={Boolean(selectedTrip)}
-        animationType="slide"
-        onRequestClose={() => setSelectedTrip(null)}
-      >
-        <SafeAreaView style={styles.modalSafeArea}>
-          <View style={styles.modalHeader}>
-            <Pressable
-              style={styles.closeButton}
-              onPress={() => setSelectedTrip(null)}
-            >
-              <Ionicons name="close" size={24} color={APP_COLORS.textPrimary} />
-            </Pressable>
-            <View style={styles.modalTitleWrap}>
-              <Text style={styles.modalTitle}>Chi tiết chuyến</Text>
-              <Text style={styles.modalSubtitle} numberOfLines={1}>
-                {selectedTrip ? getRouteName(selectedTrip) : ''}
-              </Text>
-            </View>
-            <Pressable
-              style={styles.reloadButton}
-              onPress={() => selectedTrip && loadTripDetail(selectedTrip.id)}
-            >
-              <Ionicons
-                name="refresh"
-                size={22}
-                color={APP_COLORS.primaryDark}
-              />
-            </Pressable>
-          </View>
-
-          {detailLoading && passengers.length === 0 ? (
-            <StateCard loading message="Đang tải lịch đón khách..." />
-          ) : (
-            <ScrollView contentContainerStyle={styles.modalContent}>
-              {detailError ? (
-                <View style={styles.errorBox}>
-                  <Text style={styles.errorText}>{detailError}</Text>
-                </View>
-              ) : null}
-
-              <View style={styles.summaryRow}>
-                <SummaryItem
-                  label="Hành khách"
-                  value={
-                    summary?.passenger_count ??
-                    summary?.total_passengers ??
-                    passengers.length
-                  }
-                />
-                <SummaryItem
-                  label="Đã lên xe"
-                  value={
-                    summary?.checked_in_count ??
-                    passengers.filter(item => Boolean(item.checkin_time)).length
-                  }
-                />
-                <SummaryItem
-                  label="Đã xuống"
-                  value={
-                    summary?.checked_out_count ??
-                    passengers.filter(item => Boolean(item.checkout_time))
-                      .length
-                  }
-                />
-                <SummaryItem
-                  label="Hàng cần lấy"
-                  value={summary?.cargo_to_pickup_count ?? cargo.length}
-                />
-              </View>
-
-              <Text style={styles.sectionTitle}>Lịch đón hành khách</Text>
-              {passengers.length === 0 ? (
-                <Text style={styles.emptyText}>
-                  Chưa có hành khách trong chuyến.
-                </Text>
-              ) : (
-                passengers.map((passenger, index) => {
-                  const id = passengerId(passenger);
-                  const checkedIn =
-                    Boolean(passenger.checkin_time) ||
-                    passenger.state === 'boarded';
-                  const checkedOut = Boolean(passenger.checkout_time);
-                  return (
-                    <View
-                      key={id || `${passengerName(passenger)}-${index}`}
-                      style={styles.passengerCard}
-                    >
-                      <View style={styles.passengerHeader}>
-                        <View style={styles.seatBadge}>
-                          <Text style={styles.seatText}>
-                            {String(passengerSeat(passenger))}
-                          </Text>
-                        </View>
-                        <View style={styles.passengerTitleWrap}>
-                          <Text style={styles.passengerName}>
-                            {passengerName(passenger)}
-                          </Text>
-                          <Text style={styles.passengerPhone}>
-                            {passenger.phone_number ||
-                              passenger.phone ||
-                              'Chưa có SĐT'}
-                          </Text>
-                        </View>
-                      </View>
-                      <InfoLine
-                        icon="location-outline"
-                        text={`Đón: ${
-                          passenger.pickup_location || 'Chưa cập nhật'
-                        }`}
-                      />
-                      <InfoLine
-                        icon="time-outline"
-                        text={`Giờ đón: ${formatDateTime(
-                          passenger.pickup_time,
-                        )}`}
-                      />
-                      <InfoLine
-                        icon="flag-outline"
-                        text={`Trả: ${
-                          passenger.dropoff_location || 'Chưa cập nhật'
-                        }`}
-                      />
-                      <View style={styles.actionRow}>
-                        <ActionButton
-                          label={checkedIn ? 'Đã check-in' : 'Check-in'}
-                          loading={actionKey === `${id}-check-in`}
-                          disabled={checkedIn || !id || Boolean(actionKey)}
-                          onPress={() => updatePassenger(passenger, 'check-in')}
-                        />
-                        <ActionButton
-                          label={checkedOut ? 'Đã check-out' : 'Check-out'}
-                          loading={actionKey === `${id}-check-out`}
-                          disabled={
-                            !checkedIn ||
-                            checkedOut ||
-                            !id ||
-                            Boolean(actionKey)
-                          }
-                          secondary
-                          onPress={() =>
-                            updatePassenger(passenger, 'check-out')
-                          }
-                        />
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-
-              <Text style={styles.sectionTitle}>Hàng cần lấy</Text>
-              {cargo.length === 0 ? (
-                <Text style={styles.emptyText}>
-                  Không có hàng cần lấy trong chuyến.
-                </Text>
-              ) : (
-                cargo.map((item, index) => (
-                  <View
-                    key={item.id || `${item.code}-${index}`}
-                    style={styles.cargoCard}
-                  >
-                    <Text style={styles.cargoTitle}>
-                      {item.code || item.name || `Đơn hàng #${item.id}`}
-                    </Text>
-                    <Text style={styles.metaText}>
-                      Người gửi: {item.sender_name || 'Chưa cập nhật'}
-                    </Text>
-                    <Text style={styles.metaText}>
-                      Người nhận: {item.receiver_name || 'Chưa cập nhật'}
-                    </Text>
-                    <Text style={styles.metaText}>
-                      Điểm lấy: {item.pickup_location || 'Chưa cập nhật'}
-                    </Text>
-                  </View>
-                ))
-              )}
-            </ScrollView>
-          )}
-        </SafeAreaView>
-      </Modal>
     </>
   );
 }
@@ -593,55 +883,286 @@ function StateCard({
   );
 }
 
-function SummaryItem({ label, value }: { label: string; value: number }) {
-  return (
-    <View style={styles.summaryItem}>
-      <Text style={styles.summaryValue}>{value}</Text>
-      <Text style={styles.summaryLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function ActionButton({
-  label,
-  loading,
-  disabled,
-  secondary,
-  onPress,
-}: {
-  label: string;
-  loading: boolean;
-  disabled: boolean;
-  secondary?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      style={[
-        styles.actionButton,
-        secondary && styles.actionButtonSecondary,
-        disabled && styles.disabled,
-      ]}
-      disabled={disabled}
-      onPress={onPress}
-    >
-      {loading ? (
-        <ActivityIndicator
-          size="small"
-          color={secondary ? APP_COLORS.primaryDark : APP_COLORS.surface}
-        />
-      ) : (
-        <Text
-          style={[styles.actionText, secondary && styles.actionTextSecondary]}
-        >
-          {label}
-        </Text>
-      )}
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
+  detailScreen: { flex: 1, backgroundColor: APP_COLORS.surface },
+  detailHeader: {
+    minHeight: 68,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: APP_COLORS.primaryDark,
+    backgroundColor: APP_COLORS.primary,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
+    backgroundColor: APP_COLORS.primaryDark,
+  },
+  detailHeading: {
+    flex: 1,
+    paddingHorizontal: 10,
+    color: APP_COLORS.surface,
+    fontSize: 19,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  calendarButton: {
+    width: 36,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailTabs: {
+    height: 56,
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#dedede',
+    backgroundColor: APP_COLORS.surface,
+  },
+  detailTab: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  detailTabText: { color: '#999999', fontSize: 17, fontWeight: '700' },
+  detailTabTextActive: { color: '#9650ec' },
+  detailTabIndicator: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    left: 0,
+    height: 3,
+    backgroundColor: '#9650ec',
+  },
+  passengerList: { flex: 1, backgroundColor: '#fbfbfd' },
+  passengerListContent: { paddingBottom: 28 },
+  tripReference: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: APP_COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '600',
+    backgroundColor: '#f4f3f8',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0dfe4',
+  },
+  pickupRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: APP_COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e6e6e6',
+  },
+  swipeContainer: { overflow: 'hidden', backgroundColor: APP_COLORS.danger },
+  cancelReveal: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: 116,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: APP_COLORS.danger,
+  },
+  cancelRevealText: {
+    paddingHorizontal: 6,
+    color: APP_COLORS.surface,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  pickupRowMain: { flexDirection: 'row', alignItems: 'center' },
+  pickupInfo: { flex: 1, paddingRight: 10 },
+  pickupLocation: {
+    color: '#f23d72',
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: '700',
+  },
+  phoneNumber: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    color: APP_COLORS.info,
+    fontSize: 23,
+    lineHeight: 29,
+    fontWeight: '800',
+  },
+  ticketLine: {
+    marginTop: 2,
+    color: APP_COLORS.textPrimary,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  pickupButton: {
+    minWidth: 64,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: APP_COLORS.success,
+  },
+  dropoffButton: { backgroundColor: APP_COLORS.info },
+  pickupButtonText: { color: APP_COLORS.surface, fontSize: 15, fontWeight: '800' },
+  passengerMainLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    marginTop: 3,
+  },
+  phoneAndSeat: {
+    color: APP_COLORS.textPrimary,
+    fontSize: 17,
+    lineHeight: 23,
+    fontWeight: '600',
+  },
+  totalText: { color: '#b63ee8', fontWeight: '700' },
+  unseenText: { color: '#3199e8', fontSize: 17, fontWeight: '700' },
+  passengerMeta: {
+    marginTop: 2,
+    color: APP_COLORS.textPrimary,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  compactActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  paymentButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 8,
+    backgroundColor: APP_COLORS.primaryLight,
+  },
+  paymentButtonText: {
+    color: APP_COLORS.primaryDark,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  paymentOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.42)',
+  },
+  paymentSheet: {
+    padding: 20,
+    paddingBottom: 30,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: APP_COLORS.surface,
+  },
+  paymentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  paymentTitle: { color: APP_COLORS.textPrimary, fontSize: 19, fontWeight: '800' },
+  paymentPassengerName: { marginTop: 6, color: APP_COLORS.textSecondary, fontSize: 14 },
+  paymentError: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 8,
+    color: APP_COLORS.danger,
+    backgroundColor: APP_COLORS.dangerLight,
+  },
+  paymentOptions: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  paymentOption: {
+    flex: 1,
+    minHeight: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 12,
+    backgroundColor: APP_COLORS.background,
+  },
+  paymentOptionText: { color: APP_COLORS.textPrimary, fontSize: 14, fontWeight: '700' },
+  paymentLoader: { marginTop: 16 },
+  qrWrap: { alignItems: 'center', marginTop: 14 },
+  qrImage: { width: 280, height: 280, backgroundColor: APP_COLORS.surface },
+  qrHint: { color: APP_COLORS.textPrimary, fontSize: 15, fontWeight: '700' },
+  transferNote: { marginTop: 5, color: APP_COLORS.textSecondary, fontSize: 13 },
+  centeredOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: 'rgba(0,0,0,0.42)',
+  },
+  confirmDialog: {
+    width: '100%',
+    maxWidth: 380,
+    alignItems: 'center',
+    padding: 22,
+    borderRadius: 18,
+    backgroundColor: APP_COLORS.surface,
+  },
+  confirmTitle: {
+    marginTop: 10,
+    color: APP_COLORS.textPrimary,
+    fontSize: 19,
+    fontWeight: '800',
+  },
+  confirmMessage: { marginTop: 5, color: APP_COLORS.textSecondary, fontSize: 15 },
+  confirmActions: { flexDirection: 'row', gap: 10, marginTop: 22 },
+  dialogCancelButton: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 10,
+  },
+  dialogCancelText: { color: APP_COLORS.textSecondary, fontWeight: '700' },
+  dialogConfirmButton: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: APP_COLORS.primaryDark,
+  },
+  dialogConfirmText: { color: APP_COLORS.surface, fontWeight: '800' },
+  reasonList: { marginTop: 16 },
+  reasonButton: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: APP_COLORS.border,
+  },
+  reasonText: { flex: 1, color: APP_COLORS.textPrimary, fontSize: 15, fontWeight: '600' },
+  mapEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+    backgroundColor: APP_COLORS.background,
+  },
+  mapEmptyTitle: {
+    marginTop: 12,
+    color: APP_COLORS.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  mapEmptyText: {
+    marginTop: 6,
+    color: APP_COLORS.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
   content: { paddingBottom: 24, gap: 12 },
   tripCard: {
     padding: 14,

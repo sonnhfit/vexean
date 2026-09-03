@@ -1,5 +1,13 @@
-import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ComponentProps,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  ActivityIndicator,
   Modal,
   Pressable,
   RefreshControl,
@@ -328,57 +336,81 @@ export function CustomerHomeScreen() {
   const [searching, setSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const homeLoadPromiseRef = useRef<Promise<CustomerHomeResponse | null> | null>(
+    null,
+  );
 
-  const loadHome = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
-    if (mode === 'initial') {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
+  const loadHome = useCallback((mode: 'initial' | 'refresh' = 'initial') => {
+    if (mode === 'initial' && homeLoadPromiseRef.current) {
+      return homeLoadPromiseRef.current;
     }
-    setError(null);
 
-    try {
-      const data = await requestJson<CustomerHomeResponse>(
-        '/api/nhaxe/customer/home/?limit_recent=5&limit_popular=10',
-        {
-          method: 'GET',
-          auth: true,
-          logLabel: 'customer-home',
-        },
-      );
-
-      setHomeData(data);
-      setSelectedSearch(data.default_search);
-      setRoundTrip(data.default_search.round_trip);
-      setRouteSwapped(false);
-      setSelectedServiceType(current => {
-        if (data.service_types.some(service => service.id === current)) {
-          return current;
-        }
-
-        return (
-          data.service_types.find(service => service.active)?.id ||
-          data.service_types[0]?.id ||
-          'coach'
-        );
-      });
+    const loadPromise = (async () => {
+      if (mode === 'initial') {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
+      setError(null);
 
       try {
-        const recentData = await fetchCustomerRecentSearches(10);
-        setRecentSearches(recentData);
-      } catch {
-        setRecentSearches(data.recent_searches || []);
+        const data = await requestJson<CustomerHomeResponse>(
+          '/api/nhaxe/customer/home/?limit_recent=5&limit_popular=10',
+          {
+            method: 'GET',
+            auth: true,
+            logLabel: 'customer-home',
+          },
+        );
+
+        setHomeData(data);
+        setSelectedSearch(data.default_search);
+        setRoundTrip(data.default_search.round_trip);
+        setRouteSwapped(false);
+        setSelectedServiceType(current => {
+          if (data.service_types.some(service => service.id === current)) {
+            return current;
+          }
+
+          return (
+            data.service_types.find(service => service.active)?.id ||
+            data.service_types[0]?.id ||
+            'coach'
+          );
+        });
+
+        try {
+          const recentData = await fetchCustomerRecentSearches(10);
+          setRecentSearches(recentData);
+        } catch {
+          setRecentSearches(data.recent_searches || []);
+        }
+
+        return data;
+      } catch (homeError) {
+        const message =
+          homeError instanceof Error
+            ? homeError.message
+            : 'Không tải được dữ liệu trang chủ.';
+        setError(message);
+        return null;
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-    } catch (homeError) {
-      const message =
-        homeError instanceof Error
-          ? homeError.message
-          : 'Không tải được dữ liệu trang chủ.';
-      setError(message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    })();
+
+    if (mode === 'initial') {
+      const trackedPromise = loadPromise.finally(() => {
+        if (homeLoadPromiseRef.current === trackedPromise) {
+          homeLoadPromiseRef.current = null;
+        }
+      });
+      homeLoadPromiseRef.current = trackedPromise;
+      return trackedPromise;
     }
+
+    return loadPromise;
   }, []);
 
   useEffect(() => {
@@ -442,7 +474,11 @@ export function CustomerHomeScreen() {
     }
   };
 
-  const findRoute = async (search: CustomerHomeSearch) => {
+  const findRoute = async (
+    search: CustomerHomeSearch,
+    serviceType = selectedServiceType,
+    isRoundTrip = roundTrip,
+  ) => {
     if (!search.origin?.id || !search.destination?.id) {
       throw new Error('Vui lòng chọn nơi xuất phát và nơi đến.');
     }
@@ -451,11 +487,11 @@ export function CustomerHomeScreen() {
       origin_id: String(search.origin.id),
       destination_id: String(search.destination.id),
       travel_date: search.travel_date,
-      service_type: selectedServiceType,
+      service_type: serviceType,
       passengers: '1',
     });
 
-    if (roundTrip && search.return_date) {
+    if (isRoundTrip && search.return_date) {
       params.set('return_date', search.return_date);
     }
 
@@ -478,27 +514,37 @@ export function CustomerHomeScreen() {
   };
 
   const handleSearch = async () => {
-    if (!activeSearch) {
-      showToast({
-        type: 'error',
-        title: 'Chưa có dữ liệu tìm kiếm',
-        message: 'Vui lòng tải lại trang chủ rồi thử lại.',
-      });
-      return;
-    }
-
     setSearching(true);
     try {
-      const routeSearch = await findRoute(activeSearch);
+      const loadedHome = activeSearch ? null : await loadHome('initial');
+      const search = activeSearch || loadedHome?.default_search || null;
+      if (!search) {
+        throw new Error('Không tải được dữ liệu tìm kiếm. Vui lòng thử lại.');
+      }
+
+      const searchServiceType = loadedHome
+        ? loadedHome.service_types.find(
+            service => service.id === selectedServiceType,
+          )?.id ||
+          loadedHome.service_types.find(service => service.active)?.id ||
+          loadedHome.service_types[0]?.id ||
+          selectedServiceType
+        : selectedServiceType;
+      const isRoundTrip = loadedHome ? search.round_trip : roundTrip;
+      const routeSearch = await findRoute(
+        search,
+        searchServiceType,
+        isRoundTrip,
+      );
       const selectedRoute = routeSearch.routes[0];
       if (!routeSearch.summary.available || !selectedRoute) {
         navigation.navigate('TicketSearchResults', {
           showAllActiveTrips: true,
-          originName: activeSearch.origin?.name || 'Điểm đi',
-          destinationName: activeSearch.destination?.name || 'Điểm đến',
-          travelDate: activeSearch.travel_date,
-          returnDate: roundTrip ? activeSearch.return_date : null,
-          serviceType: selectedServiceType,
+          originName: search.origin?.name || 'Điểm đi',
+          destinationName: search.destination?.name || 'Điểm đến',
+          travelDate: search.travel_date,
+          returnDate: isRoundTrip ? search.return_date : null,
+          serviceType: searchServiceType,
           passengers: routeSearch.query.passengers,
           tripCount: 0,
         });
@@ -507,12 +553,12 @@ export function CustomerHomeScreen() {
 
       navigation.navigate('TicketSearchResults', {
         routeId: selectedRoute.id,
-        originName: activeSearch.origin?.name || selectedRoute.origin.name,
+        originName: search.origin?.name || selectedRoute.origin.name,
         destinationName:
-          activeSearch.destination?.name || selectedRoute.destination.name,
-        travelDate: activeSearch.travel_date,
-        returnDate: roundTrip ? activeSearch.return_date : null,
-        serviceType: selectedServiceType,
+          search.destination?.name || selectedRoute.destination.name,
+        travelDate: search.travel_date,
+        returnDate: isRoundTrip ? search.return_date : null,
+        serviceType: searchServiceType,
         passengers: routeSearch.query.passengers,
         tripCount: routeSearch.summary.trip_count,
         minPrice: routeSearch.summary.min_price,
@@ -819,9 +865,11 @@ export function CustomerHomeScreen() {
           onPress={handleSearch}
           disabled={searching}
         >
-          <Text style={styles.searchButtonText}>
-            {searching ? 'Đang tìm...' : 'Tìm kiếm'}
-          </Text>
+          {searching ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.searchButtonText}>Tìm kiếm</Text>
+          )}
         </Pressable>
 
         {refreshLabel ? <Text style={styles.feedbackText}>{refreshLabel}</Text> : null}
