@@ -6,6 +6,7 @@ import {
   Linking,
   Modal,
   PanResponder,
+  Platform,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -14,6 +15,9 @@ import {
   Text,
   View,
 } from 'react-native';
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
@@ -115,6 +119,19 @@ function formatQueryDate(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function formatDisplayDate(date: Date) {
+  return date.toLocaleDateString('vi-VN', {
+    weekday: 'long',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function isToday(date: Date) {
+  return formatQueryDate(date) === formatQueryDate(new Date());
 }
 
 function parseDate(value?: string | false | null) {
@@ -287,10 +304,38 @@ export function DriverTripsScreen() {
     useState<DriverPassenger | null>(null);
   const [cancelPassenger, setCancelPassenger] =
     useState<DriverPassenger | null>(null);
-  const scheduleDate = formatQueryDate(new Date());
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pickerDate, setPickerDate] = useState(() => new Date());
+  const scheduleDate = formatQueryDate(selectedDate);
+  const tripListRequestId = useRef(0);
+
+  const changeDateBy = (numberOfDays: number) => {
+    setShowDatePicker(false);
+    setSelectedDate(currentDate => {
+      const nextDate = new Date(currentDate);
+      nextDate.setDate(nextDate.getDate() + numberOfDays);
+      return nextDate;
+    });
+  };
+
+  const onDatePickerChange = (
+    event: DateTimePickerEvent,
+    date?: Date,
+  ) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+      if (event.type !== 'dismissed' && date) {
+        setSelectedDate(date);
+      }
+    } else if (date) {
+      setPickerDate(date);
+    }
+  };
 
   const loadTrips = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
+      const requestId = ++tripListRequestId.current;
       mode === 'initial' ? setLoading(true) : setRefreshing(true);
       setError(null);
       try {
@@ -304,16 +349,22 @@ export function DriverTripsScreen() {
           `/api/nhaxe/odoo/driver/me/trips/?${params.toString()}`,
           { method: 'GET', auth: true, logLabel: 'driver-my-trips' },
         );
-        setTrips(normalizeTrips(data));
+        if (requestId === tripListRequestId.current) {
+          setTrips(normalizeTrips(data));
+        }
       } catch (loadError) {
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : 'Không tải được chuyến của bạn.',
-        );
+        if (requestId === tripListRequestId.current) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : 'Không tải được chuyến của bạn.',
+          );
+        }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (requestId === tripListRequestId.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [scheduleDate],
@@ -761,9 +812,7 @@ export function DriverTripsScreen() {
     <>
       <ScreenContainer
         title="Chuyến của tôi"
-        subtitle={`Lịch phân công ngày ${
-          formatDateTime(`${scheduleDate}T00:00:00`).split(',')[0]
-        }`}
+        subtitle={`Lịch phân công ${formatDisplayDate(selectedDate)}`}
       >
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -776,12 +825,102 @@ export function DriverTripsScreen() {
             />
           }
         >
+          <View style={styles.dateFilter}>
+            <Pressable
+              accessibilityLabel="Xem ngày trước"
+              style={styles.dateArrowButton}
+              onPress={() => changeDateBy(-1)}
+            >
+              <Ionicons
+                name="chevron-back"
+                size={22}
+                color={APP_COLORS.primaryDark}
+              />
+            </Pressable>
+            <Pressable
+              accessibilityLabel="Chọn ngày xem lịch chuyến"
+              style={styles.datePickerButton}
+              onPress={() => {
+                setPickerDate(selectedDate);
+                setShowDatePicker(true);
+              }}
+            >
+              <Ionicons
+                name="calendar-outline"
+                size={20}
+                color={APP_COLORS.primaryDark}
+              />
+              <View>
+                <Text style={styles.datePickerLabel}>
+                  {isToday(selectedDate) ? 'Hôm nay' : 'Ngày đã chọn'}
+                </Text>
+                <Text style={styles.datePickerValue}>
+                  {selectedDate.toLocaleDateString('vi-VN')}
+                </Text>
+              </View>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="Xem ngày tiếp theo"
+              style={styles.dateArrowButton}
+              onPress={() => changeDateBy(1)}
+            >
+              <Ionicons
+                name="chevron-forward"
+                size={22}
+                color={APP_COLORS.primaryDark}
+              />
+            </Pressable>
+          </View>
+          {showDatePicker ? (
+            Platform.OS === 'ios' ? (
+              <View style={styles.iosDatePickerCard}>
+                <DateTimePicker
+                  value={pickerDate}
+                  mode="date"
+                  display="spinner"
+                  locale="vi-VN"
+                  onChange={onDatePickerChange}
+                />
+                <View style={styles.iosDatePickerActions}>
+                  <Pressable
+                    style={styles.datePickerActionButton}
+                    onPress={() => setShowDatePicker(false)}
+                  >
+                    <Text style={styles.datePickerCancelText}>Huỷ</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.datePickerActionButton,
+                      styles.datePickerConfirmButton,
+                    ]}
+                    onPress={() => {
+                      setSelectedDate(pickerDate);
+                      setShowDatePicker(false);
+                    }}
+                  >
+                    <Text style={styles.datePickerConfirmText}>Xem chuyến</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <DateTimePicker
+                value={selectedDate}
+                mode="date"
+                display="default"
+                onChange={onDatePickerChange}
+              />
+            )
+          ) : null}
           {loading ? (
             <StateCard loading message="Đang tải lịch chuyến..." />
           ) : error ? (
             <StateCard message={error} error onRetry={() => loadTrips()} />
           ) : trips.length === 0 ? (
-            <StateCard message="Hôm nay bạn chưa được phân công chuyến nào." />
+            <StateCard
+              message={`Bạn chưa được phân công chuyến nào ngày ${selectedDate.toLocaleDateString(
+                'vi-VN',
+              )}.`}
+            />
           ) : (
             trips.map(trip => (
               <Pressable
@@ -1164,6 +1303,68 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   content: { paddingBottom: 24, gap: 12 },
+  dateFilter: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 14,
+    backgroundColor: APP_COLORS.surface,
+  },
+  dateArrowButton: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 21,
+    backgroundColor: APP_COLORS.primaryLight,
+  },
+  datePickerButton: {
+    flex: 1,
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  datePickerLabel: {
+    color: APP_COLORS.textSecondary,
+    fontSize: 12,
+  },
+  datePickerValue: {
+    marginTop: 2,
+    color: APP_COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  iosDatePickerCard: {
+    marginHorizontal: 16,
+    paddingBottom: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: APP_COLORS.border,
+    borderRadius: 14,
+    backgroundColor: APP_COLORS.surface,
+  },
+  iosDatePickerActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    paddingHorizontal: 12,
+  },
+  datePickerActionButton: {
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    borderRadius: 9,
+  },
+  datePickerConfirmButton: { backgroundColor: APP_COLORS.primaryDark },
+  datePickerCancelText: { color: APP_COLORS.textSecondary, fontWeight: '700' },
+  datePickerConfirmText: { color: APP_COLORS.surface, fontWeight: '700' },
   tripCard: {
     padding: 14,
     borderWidth: 1,
