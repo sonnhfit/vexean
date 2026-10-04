@@ -12,11 +12,12 @@ type IconName = ComponentProps<typeof Ionicons>['name'];
 type MenuItem = {
   label: string;
   icon: IconName;
-  screen: 'FleetManagement' | 'DriverManagement' | 'Passengers';
+  screen: 'AdminReports' | 'FleetManagement' | 'DriverManagement' | 'Passengers';
 };
 type RootNavigation = NativeStackNavigationProp<RootStackParamList>;
 
 const managementItems: MenuItem[] = [
+  { label: 'Thống kê báo cáo', icon: 'bar-chart-outline', screen: 'AdminReports' },
   { label: 'Điều hành xe trung chuyển', icon: 'car-outline', screen: 'FleetManagement' },
   { label: 'Quản lý nhân sự', icon: 'person-outline', screen: 'DriverManagement' },
   { label: 'Quản lý khách hàng', icon: 'people-outline', screen: 'Passengers' },

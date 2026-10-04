@@ -15,12 +15,13 @@ import { PassengersScreen } from '../screens/main/PassengersScreen';
 import { useAppSelector } from '../store/hooks';
 import { APP_COLORS } from '../theme/colors';
 import { RootStackParamList } from '../types/navigation';
+import { AdminReportsScreen } from '../screens/main/AdminReportsScreen';
 import { MainTabs } from './MainTabs';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
-  const { hydrated, accessToken } = useAppSelector(state => state.auth);
+  const { hydrated, accessToken, user } = useAppSelector(state => state.auth);
 
   if (!hydrated) {
     return (
@@ -31,6 +32,7 @@ export function RootNavigator() {
   }
 
   const isAuthenticated = Boolean(accessToken);
+  const isAdmin = (user?.user_role?.role || user?.role || '').toLowerCase() === 'admin';
 
   return (
     <Stack.Navigator
@@ -87,6 +89,7 @@ export function RootNavigator() {
             component={CustomerLocationSearchScreen}
             options={{ headerShown: false }}
           />
+          {isAdmin && <Stack.Screen name="AdminReports" component={AdminReportsScreen} options={{ title: 'Thống kê báo cáo' }} />}
           <Stack.Screen name="FleetManagement" component={FleetManagementScreen} options={{ title: 'Điều hành xe trung chuyển' }} />
           <Stack.Screen name="DriverManagement" component={DriverManagementScreen} options={{ title: 'Quản lý nhân sự' }} />
           <Stack.Screen name="Passengers" component={PassengersScreen} options={{ title: 'Quản lý khách hàng' }} />

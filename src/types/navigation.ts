@@ -22,6 +22,7 @@ export type CustomerLocationSelection = {
 
 export type RootStackParamList = {
   Login: undefined;
+  AdminReports: undefined;
   MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
   Profile: undefined;
   EditProfile: undefined;

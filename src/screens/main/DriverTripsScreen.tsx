@@ -1,6 +1,7 @@
 import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Image,
   Linking,
@@ -25,7 +26,26 @@ import { APP_COLORS } from '../../theme/colors';
 
 type Relation = false | [number, string];
 
+type Settlement = {
+  id: number;
+  name: string;
+  completed_at: string;
+  driver_name: string;
+  route_name: string;
+  vehicle_name: string;
+  totals: Record<string, string>;
+  lines: {kind: string; code: string; name: string; amount: string; payment_status: string}[];
+};
+
+const SETTLEMENT_LABELS: Record<string, string> = {
+  ticket_revenue: 'Doanh thu vé', cargo_revenue: 'Doanh thu hàng',
+  revenue: 'Tổng doanh thu', cash: 'Đã thu tiền mặt', transfer: 'Đã thu chuyển khoản',
+  unpaid: 'Chưa thu', refunded: 'Đã hoàn tiền (trừ doanh thu)', unknown: 'Cần kiểm tra / phương thức khác', cod: 'COD thu hộ (ngoài doanh thu)',
+};
+
 type DriverTrip = {
+  completion_status?: 'completed' | null;
+  settlement?: Settlement | null;
   id: number;
   name?: string;
   state?: string;
@@ -69,7 +89,7 @@ type DriverPassenger = {
   total_amount?: number | string;
   payment_method?: 'cash' | 'transfer' | string;
   payment_status?: string;
-  note?: string;
+  note?: string | false | null;
   pickup_latitude?: number;
   pickup_longitude?: number;
   cancelled_reason?: string;
@@ -105,7 +125,7 @@ type PaymentResponse = {
   transfer_note?: string;
 };
 
-const ACTIVE_STATES = 'confirmed,boarding,running';
+const CANCEL_REVEAL_WIDTH = 116;
 const CANCELLATION_REASONS = [
   'Khách đổi lịch',
   'Khách không nghe máy',
@@ -223,6 +243,10 @@ function stateLabel(state?: string) {
     running: 'Đang chạy',
     done: 'Hoàn thành',
     boarded: 'Đã lên xe',
+    scheduled: 'Chờ khởi hành',
+    in_progress: 'Đang chạy',
+    completed: 'Đã kết thúc',
+    checked_in: 'Đã đón',
   };
   return state ? labels[state] || state : 'Chưa cập nhật';
 }
@@ -245,33 +269,73 @@ function formatMoney(value?: number | string) {
 function SwipeToCancelRow({
   children,
   onCancel,
-}: PropsWithChildren<{ onCancel: () => void }>) {
+  onSwipeActiveChange,
+}: PropsWithChildren<{
+  onCancel: () => void;
+  onSwipeActiveChange: (active: boolean) => void;
+}>) {
   const translateX = useRef(new Animated.Value(0)).current;
+  const position = useRef(0);
+  const gestureStart = useRef(0);
+  useEffect(() => {
+    const listener = translateX.addListener(({ value }) => {
+      position.current = value;
+    });
+    return () => translateX.removeListener(listener);
+  }, [translateX]);
+
+  const settle = useCallback((open: boolean) => {
+    Animated.spring(translateX, {
+      toValue: open ? -CANCEL_REVEAL_WIDTH : 0,
+      stiffness: 260,
+      damping: 30,
+      mass: 1,
+      overshootClamping: true,
+      // PanResponder updates this value on the JS thread while dragging.
+      useNativeDriver: false,
+    }).start();
+  }, [translateX]);
+
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gesture) =>
-        gesture.dx < -8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+        Math.abs(gesture.dx) > 8 &&
+        Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5 &&
+        (gesture.dx < 0 || position.current < 0),
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        translateX.stopAnimation();
+        gestureStart.current = position.current;
+        onSwipeActiveChange(true);
+      },
       onPanResponderMove: (_, gesture) => {
-        translateX.setValue(Math.max(-116, Math.min(0, gesture.dx)));
+        translateX.setValue(Math.max(
+          -CANCEL_REVEAL_WIDTH,
+          Math.min(0, gestureStart.current + gesture.dx),
+        ));
       },
       onPanResponderRelease: (_, gesture) => {
-        Animated.spring(translateX, {
-          toValue: gesture.dx < -52 ? -116 : 0,
-          useNativeDriver: true,
-        }).start();
+        const endPosition = gestureStart.current + gesture.dx;
+        // Require deliberate rightward travel to close, so a small finger
+        // recoil at release does not undo an otherwise completed swipe.
+        const closing = gesture.dx > 20 && gesture.vx > 0.35;
+        const opening = gesture.dx < -12 && gesture.vx < -0.35;
+        settle(!closing && (opening || endPosition <= -CANCEL_REVEAL_WIDTH / 3));
+        onSwipeActiveChange(false);
       },
       onPanResponderTerminate: () => {
-        Animated.spring(translateX, {
-          toValue: 0,
-          useNativeDriver: true,
-        }).start();
+        settle(position.current <= -CANCEL_REVEAL_WIDTH / 3);
+        onSwipeActiveChange(false);
       },
     }),
   ).current;
 
   return (
     <View style={styles.swipeContainer}>
-      <Pressable style={styles.cancelReveal} onPress={onCancel}>
+      <Pressable style={styles.cancelReveal} onPress={() => {
+        settle(false);
+        onCancel();
+      }}>
         <Ionicons name="close-circle-outline" size={22} color={APP_COLORS.surface} />
         <Text style={styles.cancelRevealText}>Khách đã huỷ</Text>
       </Pressable>
@@ -286,6 +350,10 @@ function SwipeToCancelRow({
 }
 
 export function DriverTripsScreen() {
+  const [swipeActive, setSwipeActive] = useState(false);
+  const [history, setHistory] = useState(false);
+  const [completedTrips, setCompletedTrips] = useState<Settlement[]>([]);
+  const [closing, setClosing] = useState(false);
   const [trips, setTrips] = useState<DriverTrip[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -342,15 +410,22 @@ export function DriverTripsScreen() {
         const params = new URLSearchParams({
           date_from: scheduleDate,
           date_to: scheduleDate,
-          states: ACTIVE_STATES,
           limit: '200',
         });
-        const data = await requestJson<TripListResponse>(
-          `/api/nhaxe/odoo/driver/me/trips/?${params.toString()}`,
-          { method: 'GET', auth: true, logLabel: 'driver-my-trips' },
-        );
-        if (requestId === tripListRequestId.current) {
-          setTrips(normalizeTrips(data));
+        if (history) {
+          const data = await requestJson<{results: Settlement[]}>(
+            `/api/nhaxe/driver/me/completed-trips/?${params.toString()}`,
+            {method: 'GET', auth: true},
+          );
+          if (requestId === tripListRequestId.current) setCompletedTrips(data.results);
+        } else {
+          const data = await requestJson<TripListResponse>(
+            `/api/nhaxe/driver/me/trips/?${params.toString()}`,
+            { method: 'GET', auth: true, logLabel: 'driver-my-trips' },
+          );
+          if (requestId === tripListRequestId.current) {
+            setTrips(normalizeTrips(data));
+          }
         }
       } catch (loadError) {
         if (requestId === tripListRequestId.current) {
@@ -367,7 +442,7 @@ export function DriverTripsScreen() {
         }
       }
     },
-    [scheduleDate],
+    [scheduleDate, history],
   );
 
   useEffect(() => {
@@ -379,7 +454,7 @@ export function DriverTripsScreen() {
     setDetailError(null);
     try {
       const data = await requestJson<TripDetailResponse>(
-        `/api/nhaxe/odoo/driver/me/trips/${tripId}/`,
+        `/api/nhaxe/driver/me/trips/${tripId}/`,
         { method: 'GET', auth: true, logLabel: 'driver-trip-detail' },
       );
       setSelectedTrip(normalizeTripDetail(data));
@@ -393,6 +468,29 @@ export function DriverTripsScreen() {
       setDetailLoading(false);
     }
   }, []);
+
+  const finishTrip = () => {
+    if (!selectedTrip || closing || detailLoading || actionKey || paymentLoading) return;
+    const tripId = selectedTrip.id;
+    Alert.alert('Đóng lệnh kết thúc chuyến',
+      'Xác nhận chuyến đã kết thúc? Backend sẽ chốt doanh thu và lưu báo cáo đối soát. Lịch đón và thanh toán trên chuyến sẽ ngừng chỉnh sửa.',
+      [{text: 'Quay lại', style: 'cancel'}, {text: 'Kết thúc chuyến', onPress: async () => {
+        setClosing(true);
+        setDetailError(null);
+        try {
+          const report = await requestJson<Settlement>(
+            `/api/nhaxe/driver/me/trips/${tripId}/complete/`,
+            {method: 'POST', auth: true},
+          );
+          setSelectedTrip(current => current?.id === tripId
+            ? {...current, completion_status: 'completed', state: 'completed', settlement: report} : current);
+          loadTrips('refresh');
+        } catch (err) {
+          setDetailError(err instanceof Error ? err.message : 'Không thể kết thúc chuyến. Vui lòng thử lại.');
+        } finally { setClosing(false); }
+      }}],
+    );
+  };
 
   const openTrip = (trip: DriverTrip) => {
     setDetailTab('waiting');
@@ -410,7 +508,7 @@ export function DriverTripsScreen() {
     setQrPayment(null);
     try {
       const data = await requestJson<PaymentResponse>(
-        `/api/nhaxe/odoo/driver/me/trips/${selectedTrip.id}/passengers/${ticketId}/payment/`,
+        `/api/nhaxe/driver/me/trips/${selectedTrip.id}/passengers/${ticketId}/payment/`,
         {
           method: 'POST',
           auth: true,
@@ -458,7 +556,7 @@ export function DriverTripsScreen() {
     setDetailError(null);
     try {
       await requestJson<unknown>(
-        `/api/nhaxe/odoo/driver/me/trips/${selectedTrip.id}/passengers/${ticketId}/${action}/`,
+        `/api/nhaxe/driver/me/trips/${selectedTrip.id}/passengers/${ticketId}/${action}/`,
         { method: 'POST', auth: true, logLabel: `driver-passenger-${action}` },
       );
       await loadTripDetail(selectedTrip.id);
@@ -483,7 +581,7 @@ export function DriverTripsScreen() {
     setDetailError(null);
     try {
       await requestJson<unknown>(
-        `/api/nhaxe/odoo/driver/me/trips/${selectedTrip.id}/passengers/${ticketId}/cancel/`,
+        `/api/nhaxe/driver/me/trips/${selectedTrip.id}/passengers/${ticketId}/cancel/`,
         {
           method: 'POST',
           auth: true,
@@ -519,6 +617,7 @@ export function DriverTripsScreen() {
   };
 
   const passengers = selectedTrip?.passenger_pickup_schedule || [];
+  const tripClosed = selectedTrip?.completion_status === 'completed' || selectedTrip?.state === 'completed';
 
   if (selectedTrip) {
     const activePassengers = passengers.filter(
@@ -580,6 +679,8 @@ export function DriverTripsScreen() {
         ) : (
           <ScrollView
             style={styles.passengerList}
+            scrollEnabled={!swipeActive}
+            directionalLockEnabled
             contentContainerStyle={styles.passengerListContent}
             showsVerticalScrollIndicator={false}
             alwaysBounceVertical
@@ -594,6 +695,12 @@ export function DriverTripsScreen() {
             <Text style={styles.tripReference} numberOfLines={1}>
               {selectedTrip.name || `Chuyến #${selectedTrip.id}`} - {getRouteName(selectedTrip)}
             </Text>
+            {selectedTrip.settlement ? <SettlementCard report={selectedTrip.settlement} /> : (
+              <Pressable style={[styles.retryButton, (closing || detailLoading || !!actionKey || paymentLoading) && styles.disabled]}
+                disabled={closing || detailLoading || !!actionKey || paymentLoading || selectedTrip.state === 'cancelled'} onPress={finishTrip}>
+                <Text style={styles.retryText}>{closing ? 'Đang chốt chuyến...' : 'Đóng lệnh kết thúc chuyến'}</Text>
+              </Pressable>
+            )}
             {detailError ? (
               <View style={styles.errorBox}><Text style={styles.errorText}>{detailError}</Text></View>
             ) : null}
@@ -609,6 +716,7 @@ export function DriverTripsScreen() {
                 const checkedIn = Boolean(passenger.checkin_time) || passenger.state === 'boarded';
                 const checkedOut = Boolean(passenger.checkout_time);
                 const phone = passenger.phone_number || passenger.phone || 'Chưa có SĐT';
+                const note = typeof passenger.note === 'string' ? passenger.note.trim() : '';
                 const row = (
                   <View style={styles.pickupRow}>
                     <View style={styles.pickupRowMain}>
@@ -616,6 +724,11 @@ export function DriverTripsScreen() {
                         <Text style={styles.pickupLocation}>
                           {passenger.pickup_location || 'Chưa cập nhật điểm đón'}
                         </Text>
+                        {detailTab === 'picked' ? (
+                          <Text style={styles.dropoffLocation}>
+                            Điểm trả: {passenger.dropoff_location || 'Chưa cập nhật điểm trả'}
+                          </Text>
+                        ) : null}
                         <Pressable onPress={() => callPassenger(phone)}>
                           <Text style={styles.phoneNumber}>{phone}</Text>
                         </Pressable>
@@ -631,7 +744,7 @@ export function DriverTripsScreen() {
                       </View>
                       {id ? (
                         <Pressable
-                          disabled={Boolean(actionKey) || checkedOut}
+                          disabled={Boolean(actionKey) || checkedOut || tripClosed || closing}
                           style={[
                             styles.pickupButton,
                             checkedIn && styles.dropoffButton,
@@ -655,7 +768,14 @@ export function DriverTripsScreen() {
                         </Pressable>
                       ) : null}
                     </View>
+                    {note ? (
+                      <View style={styles.passengerNote}>
+                        <Ionicons name="document-text-outline" size={17} color={APP_COLORS.primaryDark} />
+                        <Text style={styles.passengerNoteText}>Ghi chú: {note}</Text>
+                      </View>
+                    ) : null}
                     <Pressable
+                      disabled={tripClosed || closing}
                       style={styles.paymentButton}
                       onPress={() => {
                         setPaymentError(null);
@@ -672,12 +792,13 @@ export function DriverTripsScreen() {
                     </Pressable>
                   </View>
                 );
-                return checkedIn ? (
+                return checkedIn || tripClosed || closing ? (
                   <View key={id || `${phone}-${index}`}>{row}</View>
                 ) : (
                   <SwipeToCancelRow
                     key={id || `${phone}-${index}`}
                     onCancel={() => setCancelPassenger(passenger)}
+                    onSwipeActiveChange={setSwipeActive}
                   >
                     {row}
                   </SwipeToCancelRow>
@@ -825,6 +946,10 @@ export function DriverTripsScreen() {
             />
           }
         >
+          <View style={styles.detailTabs}>
+            <Pressable style={styles.detailTab} onPress={() => setHistory(false)}><Text style={[styles.detailTabText, !history && styles.detailTabTextActive]}>Lịch chuyến</Text></Pressable>
+            <Pressable style={styles.detailTab} onPress={() => setHistory(true)}><Text style={[styles.detailTabText, history && styles.detailTabTextActive]}>Đã kết thúc</Text></Pressable>
+          </View>
           <View style={styles.dateFilter}>
             <Pressable
               accessibilityLabel="Xem ngày trước"
@@ -915,6 +1040,13 @@ export function DriverTripsScreen() {
             <StateCard loading message="Đang tải lịch chuyến..." />
           ) : error ? (
             <StateCard message={error} error onRetry={() => loadTrips()} />
+          ) : history ? (
+            completedTrips.length ? <>
+              <View style={styles.tripCard}><Text style={styles.tripTitle}>{completedTrips.length} chuyến đã kết thúc</Text>
+                <Text style={styles.infoText}>Doanh thu: {formatMoney(completedTrips.reduce((total, item) => total + Number(item.totals.revenue || 0), 0))}</Text>
+              </View>
+              {completedTrips.map(report => <SettlementCard key={report.id} report={report} />)}
+            </> : <StateCard message="Chưa có chuyến đã kết thúc trong ngày được chọn." />
           ) : trips.length === 0 ? (
             <StateCard
               message={`Bạn chưa được phân công chuyến nào ngày ${selectedDate.toLocaleDateString(
@@ -973,6 +1105,23 @@ export function DriverTripsScreen() {
 
     </>
   );
+}
+
+function SettlementCard({report}: {report: Settlement}) {
+  const [expanded, setExpanded] = useState(false);
+  return <View style={styles.tripCard}>
+    <Text style={styles.tripTitle}>{report.name} · Đã kết thúc</Text>
+    <Text style={styles.infoText}>{report.route_name} · {report.vehicle_name}</Text>
+    <Text style={styles.infoText}>{report.driver_name} · {formatDateTime(report.completed_at)}</Text>
+    {Object.entries(SETTLEMENT_LABELS).map(([key, label]) => <View key={key} style={styles.infoLine}>
+      <Text style={styles.infoText}>{label}</Text><Text style={styles.ticketLine}>{formatMoney(report.totals[key])}</Text>
+    </View>)}
+    <Text style={styles.metaText}>Số liệu tại lúc đóng lệnh. Tiền mặt đã thu cần đối chiếu người thu trước khi xác định tiền tài xế phải nộp.</Text>
+    <Pressable style={styles.paymentButton} onPress={() => setExpanded(value => !value)}><Text style={styles.paymentButtonText}>{expanded ? 'Thu gọn' : 'Xem bảng vé / hàng'}</Text></Pressable>
+    {expanded && report.lines.map((line, index) => <View key={`${line.kind}-${line.code}-${index}`} style={styles.infoLine}>
+      <Text style={styles.infoText}>{line.code} · {line.name}{'\n'}{line.payment_status === 'paid' ? 'Đã thu' : line.payment_status === 'pending' ? 'Chưa thu' : line.payment_status === 'refunded' ? 'Đã hoàn tiền' : 'Chưa xác định'}</Text><Text style={styles.ticketLine}>{formatMoney(line.amount)}</Text>
+    </View>)}
+  </View>;
 }
 
 function InfoLine({
@@ -1098,7 +1247,7 @@ const styles = StyleSheet.create({
     top: 0,
     right: 0,
     bottom: 0,
-    width: 116,
+    width: CANCEL_REVEAL_WIDTH,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
@@ -1118,6 +1267,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 23,
     fontWeight: '700',
+  },
+  dropoffLocation: {
+    marginTop: 4,
+    color: APP_COLORS.info,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '600',
   },
   phoneNumber: {
     alignSelf: 'flex-start',
@@ -1165,6 +1321,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '600',
+  },
+  passengerNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 7,
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: APP_COLORS.primaryLight,
+  },
+  passengerNoteText: {
+    flex: 1,
+    color: APP_COLORS.textPrimary,
+    fontSize: 14,
+    lineHeight: 20,
   },
   compactActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
   paymentButton: {
