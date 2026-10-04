@@ -1,7 +1,9 @@
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../types/navigation';
 import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Image,
   Linking,
@@ -353,7 +355,7 @@ export function DriverTripsScreen() {
   const [swipeActive, setSwipeActive] = useState(false);
   const [history, setHistory] = useState(false);
   const [completedTrips, setCompletedTrips] = useState<Settlement[]>([]);
-  const [closing, setClosing] = useState(false);
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [trips, setTrips] = useState<DriverTrip[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -469,27 +471,15 @@ export function DriverTripsScreen() {
     }
   }, []);
 
+  const selectedTripId = selectedTrip?.id;
+  useEffect(() => navigation.addListener('focus', () => {
+    loadTrips('refresh');
+    if (selectedTripId) loadTripDetail(selectedTripId);
+  }), [navigation, selectedTripId, loadTrips, loadTripDetail]);
+
   const finishTrip = () => {
-    if (!selectedTrip || closing || detailLoading || actionKey || paymentLoading) return;
-    const tripId = selectedTrip.id;
-    Alert.alert('Đóng lệnh kết thúc chuyến',
-      'Xác nhận chuyến đã kết thúc? Backend sẽ chốt doanh thu và lưu báo cáo đối soát. Lịch đón và thanh toán trên chuyến sẽ ngừng chỉnh sửa.',
-      [{text: 'Quay lại', style: 'cancel'}, {text: 'Kết thúc chuyến', onPress: async () => {
-        setClosing(true);
-        setDetailError(null);
-        try {
-          const report = await requestJson<Settlement>(
-            `/api/nhaxe/driver/me/trips/${tripId}/complete/`,
-            {method: 'POST', auth: true},
-          );
-          setSelectedTrip(current => current?.id === tripId
-            ? {...current, completion_status: 'completed', state: 'completed', settlement: report} : current);
-          loadTrips('refresh');
-        } catch (err) {
-          setDetailError(err instanceof Error ? err.message : 'Không thể kết thúc chuyến. Vui lòng thử lại.');
-        } finally { setClosing(false); }
-      }}],
-    );
+    if (!selectedTrip || detailLoading || actionKey || paymentLoading) return;
+    navigation.navigate('DriverTripCompletion', {tripId: selectedTrip.id});
   };
 
   const openTrip = (trip: DriverTrip) => {
@@ -695,12 +685,6 @@ export function DriverTripsScreen() {
             <Text style={styles.tripReference} numberOfLines={1}>
               {selectedTrip.name || `Chuyến #${selectedTrip.id}`} - {getRouteName(selectedTrip)}
             </Text>
-            {selectedTrip.settlement ? <SettlementCard report={selectedTrip.settlement} /> : (
-              <Pressable style={[styles.retryButton, (closing || detailLoading || !!actionKey || paymentLoading) && styles.disabled]}
-                disabled={closing || detailLoading || !!actionKey || paymentLoading || selectedTrip.state === 'cancelled'} onPress={finishTrip}>
-                <Text style={styles.retryText}>{closing ? 'Đang chốt chuyến...' : 'Đóng lệnh kết thúc chuyến'}</Text>
-              </Pressable>
-            )}
             {detailError ? (
               <View style={styles.errorBox}><Text style={styles.errorText}>{detailError}</Text></View>
             ) : null}
@@ -744,7 +728,7 @@ export function DriverTripsScreen() {
                       </View>
                       {id ? (
                         <Pressable
-                          disabled={Boolean(actionKey) || checkedOut || tripClosed || closing}
+                          disabled={Boolean(actionKey) || checkedOut || tripClosed}
                           style={[
                             styles.pickupButton,
                             checkedIn && styles.dropoffButton,
@@ -775,7 +759,7 @@ export function DriverTripsScreen() {
                       </View>
                     ) : null}
                     <Pressable
-                      disabled={tripClosed || closing}
+                      disabled={tripClosed}
                       style={styles.paymentButton}
                       onPress={() => {
                         setPaymentError(null);
@@ -792,7 +776,7 @@ export function DriverTripsScreen() {
                     </Pressable>
                   </View>
                 );
-                return checkedIn || tripClosed || closing ? (
+                return checkedIn || tripClosed ? (
                   <View key={id || `${phone}-${index}`}>{row}</View>
                 ) : (
                   <SwipeToCancelRow
@@ -805,6 +789,17 @@ export function DriverTripsScreen() {
                 );
               })
             )}
+            <View style={styles.closeTripFooter}>
+              {selectedTrip.settlement ? <SettlementCard report={selectedTrip.settlement} /> : selectedTrip.state !== 'cancelled' ? (
+                <>
+                  <Text style={styles.infoText}>Kiểm tra báo cáo doanh thu trước khi xác nhận kết thúc chuyến.</Text>
+                  <Pressable style={[styles.actionButton, (detailLoading || !!actionKey || paymentLoading) && styles.disabled]}
+                    disabled={detailLoading || !!actionKey || paymentLoading} onPress={finishTrip}>
+                    <Text style={styles.actionText}>Đóng lệnh kết thúc chuyến</Text>
+                  </Pressable>
+                </>
+              ) : null}
+            </View>
           </ScrollView>
         )}
         <Modal
@@ -1172,6 +1167,7 @@ function StateCard({
 }
 
 const styles = StyleSheet.create({
+  closeTripFooter: {padding: 16, gap: 12},
   detailScreen: { flex: 1, backgroundColor: APP_COLORS.surface },
   detailHeader: {
     minHeight: 68,

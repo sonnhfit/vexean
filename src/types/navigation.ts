@@ -23,6 +23,7 @@ export type CustomerLocationSelection = {
 export type RootStackParamList = {
   Login: undefined;
   AdminReports: undefined;
+  DriverTripCompletion: {tripId: number};
   MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
   Profile: undefined;
   EditProfile: undefined;
