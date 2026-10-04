@@ -54,7 +54,7 @@ type OdooVehicle = {
   vehicle_type: string;
   capacity: number;
   floor_count: number;
-  seat_layout: string;
+  seat_layout: string | Record<string, unknown> | false | null;
   active: boolean;
   note: string;
 };
@@ -119,7 +119,8 @@ function mapOdooVehicle(vehicle: OdooVehicle): Vehicle {
     model: vehicle.name || '',
     year: vehicle.floor_count || null,
     seat_count: vehicle.capacity || null,
-    color: vehicle.seat_layout || '',
+    // The database transport API returns an object when no layout is available.
+    color: typeof vehicle.seat_layout === 'string' ? vehicle.seat_layout : '',
     has_ac: false,
     has_wifi: false,
     has_usb: false,
@@ -637,7 +638,7 @@ function VehicleRow({
         <Text style={styles.vehicleMeta} numberOfLines={1}>
           {name} •{' '}
           {vehicle.seat_count ? `${vehicle.seat_count} ghế` : 'Chưa có số ghế'}{' '}
-          • {vehicle.color || 'Chưa có màu'}
+          • {vehicle.color || 'Chưa có layout ghế'}
         </Text>
       </View>
       <View style={styles.rowActions}>

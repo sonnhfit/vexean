@@ -14,6 +14,9 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../types/navigation';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
@@ -423,6 +426,7 @@ function FilterChip({
 }
 
 export function DashboardScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const user = useAppSelector(state => state.auth.user);
   const role = (user?.user_role?.role || user?.role || '').toLowerCase();
   const isAdmin = role === 'admin';
@@ -1148,7 +1152,20 @@ export function DashboardScreen() {
 
                   <View style={styles.tripGrid}>
                     {group.trips.map(trip => (
-                      <View key={trip.id} style={styles.tripTile}>
+                      <Pressable
+                        key={trip.id}
+                        style={styles.tripTile}
+                        disabled={!isAdmin}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Xem hành khách ${getRouteName(trip)}, ${formatTime(trip.departure_time)}`}
+                        onPress={() => navigation.navigate('AdminTripPassengers', {
+                          tripId: trip.id,
+                          routeName: getRouteName(trip),
+                          departureTime: trip.departure_time,
+                          vehicleName: trip.vehicle?.license_plate || trip.vehicle?.name || relationName(trip.vehicle_id),
+                          driverName: trip.driver?.name || relationName(trip.driver_id),
+                        })}
+                      >
                         <View style={styles.tripTileTop}>
                           <Text
                             style={[
@@ -1165,7 +1182,8 @@ export function DashboardScreen() {
                         <Text style={styles.tripRouteCode} numberOfLines={1}>
                           {group.routeCode}
                         </Text>
-                      </View>
+                        {isAdmin ? <Text style={styles.tripRouteCode}>Xem hành khách ›</Text> : null}
+                      </Pressable>
                     ))}
                   </View>
                 </>

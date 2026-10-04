@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -11,6 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { useToast } from '../../components/Toast';
@@ -42,7 +43,8 @@ type Seat = {
   price?: number | string;
 };
 type TripsResponse = { results?: Trip[] };
-type SeatsResponse = Seat[] | { results?: Seat[]; seats?: Seat[] };
+type Ticket = { id: number; name: string; passenger_name: string; seat_name?: string; seat_id?: OdooRelation; state: string };
+type SeatsResponse = Seat[] | { results?: Seat[]; seats?: Seat[]; tickets?: Ticket[] };
 type BookingResponse = { total_tickets?: number; tickets?: { name?: string }[] };
 
 const QUICK_NOTES = ['Khách sinh viên', 'Khách bệnh viện K', 'Khách khứ hồi'];
@@ -112,7 +114,13 @@ export function AdminBookingScreen() {
   const [travelDate, setTravelDate] = useState(() => localDate(new Date()));
   const [trips, setTrips] = useState<Trip[]>([]);
   const [activeTripIndex, setActiveTripIndex] = useState(0);
-  const [seats, setSeats] = useState<Seat[]>([]);
+  const [seatData, setSeats] = useState<Seat[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loadedTripId, setLoadedTripId] = useState<number | null>(null);
+  const [seatRevision, setSeatRevision] = useState(0);
+  const tripRequest = useRef(0);
+  const seatRequest = useRef(0);
+  const currentTripId = useRef<number | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,7 +134,12 @@ export function AdminBookingScreen() {
 
   const selectedTrip = trips[activeTripIndex] || null;
   const selectedTripId = selectedTrip?.id;
+  currentTripId.current = selectedTripId;
+  const seats = useMemo(() => loadedTripId === selectedTripId ? seatData : [], [loadedTripId, selectedTripId, seatData]);
+  const tripTickets = useMemo(() => loadedTripId === selectedTripId ? tickets : [], [loadedTripId, selectedTripId, tickets]);
+  const seatsReady = loadedTripId === selectedTripId;
   const fetchTrips = useCallback(async (refresh = false) => {
+    const requestId = ++tripRequest.current;
     refresh ? setRefreshing(true) : setLoading(true);
     setError(null);
     try {
@@ -134,44 +147,66 @@ export function AdminBookingScreen() {
         `/api/nhaxe/odoo/trips/?date_from=${travelDate}&date_to=${travelDate}&states=draft,confirmed&limit=100`,
         { method: 'GET', auth: true, logLabel: 'admin-booking-trips' },
       );
-      setTrips(data.results || []);
-      setActiveTripIndex(0);
+      if (requestId !== tripRequest.current) return;
+      const nextTrips = data.results || [];
+      const retainedIndex = nextTrips.findIndex(trip => trip.id === currentTripId.current);
+      setTrips(nextTrips);
+      setActiveTripIndex(Math.max(0, retainedIndex));
+      setSeatRevision(value => value + 1);
     } catch (requestError) {
+      if (requestId !== tripRequest.current) return;
       setTrips([]);
       setError(requestError instanceof Error ? requestError.message : 'Không tải được chuyến xe.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === tripRequest.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [travelDate]);
 
   const fetchSeats = useCallback(async (tripId: number) => {
+    const requestId = ++seatRequest.current;
+    setLoadedTripId(null);
+    setError(null);
     try {
       const data = await requestJson<SeatsResponse>(
         `/api/nhaxe/odoo/trips/${tripId}/seats/`,
         { method: 'GET', auth: true, logLabel: 'admin-booking-seats' },
       );
+      if (requestId !== seatRequest.current || currentTripId.current !== tripId) return;
       setSeats(normalizeSeats(data));
+      setTickets(Array.isArray(data) ? [] : (data.tickets || []).filter(ticket => !['cancelled', 'cancel'].includes(ticket.state)));
+      setLoadedTripId(tripId);
     } catch (requestError) {
+      if (requestId !== seatRequest.current || currentTripId.current !== tripId) return;
       setSeats([]);
+      setTickets([]);
       setError(requestError instanceof Error ? requestError.message : 'Không tải được sơ đồ ghế.');
     }
   }, []);
 
-  useEffect(() => { fetchTrips(); }, [fetchTrips]);
+  useFocusEffect(useCallback(() => {
+    fetchTrips();
+    return () => { ++tripRequest.current; ++seatRequest.current; };
+  }, [fetchTrips]));
+  const invalidateSeats = useCallback(() => { ++seatRequest.current; }, []);
   useEffect(() => {
+    setSelectedSeatIds([]);
+    setBookingVisible(false);
     if (selectedTripId) {
       fetchSeats(selectedTripId);
     } else {
       setSeats([]);
     }
-  }, [fetchSeats, selectedTripId]);
+    return invalidateSeats;
+  }, [fetchSeats, selectedTripId, seatRevision, invalidateSeats]);
 
   const stats = useMemo(() => ({
-    booked: seats.filter(seat => seat.state === 'booked' || seat.state === 'occupied').length,
-    available: seats.filter(seat => seat.state === 'available').length,
+    booked: Math.max(tripTickets.length, seats.filter(seat => seat.state === 'booked' || seat.state === 'occupied').length),
+    available: Math.min(selectedTrip?.available_seats ?? 0, seats.filter(seat => seat.state === 'available').length),
     blocked: seats.filter(seat => seat.state === 'blocked').length,
-  }), [seats]);
+  }), [seats, tripTickets, selectedTrip]);
 
   const sortedSeats = useMemo(() => [...seats].sort((a, b) => a.row - b.row || a.col - b.col), [seats]);
   const selectedBookingSeats = useMemo(
@@ -183,7 +218,7 @@ export function AdminBookingScreen() {
     [selectedBookingSeats, selectedTrip],
   );
   const openBooking = (seat?: Seat) => {
-    if (!selectedTrip) return;
+    if (!selectedTrip || !seatsReady || (seat && seat.state !== 'available')) return;
     setBookingError(null);
     setSelectedSeatIds(seat?.state === 'available' ? [seat.id] : []);
     setBookingVisible(true);
@@ -193,7 +228,7 @@ export function AdminBookingScreen() {
     setSelectedSeatIds(current => current.includes(seat.id) ? current.filter(id => id !== seat.id) : [...current, seat.id]);
   };
   const submitBooking = async () => {
-    if (!selectedTrip || selectedSeatIds.length === 0) {
+    if (!selectedTrip || !seatsReady || selectedSeatIds.length === 0) {
       setBookingError('Vui lòng chọn ít nhất một ghế trống.');
       return;
     }
@@ -215,15 +250,18 @@ export function AdminBookingScreen() {
       setBookingVisible(false);
       setSelectedSeatIds([]);
       showToast({ type: 'success', title: 'Đặt vé thành công', message: `Đã đặt ${data.total_tickets || selectedBookingSeats.length} vé.` });
-      await Promise.all([fetchSeats(selectedTrip.id), fetchTrips(true)]);
+      await fetchTrips(true);
     } catch (requestError) {
       setBookingError(requestError instanceof Error ? requestError.message : 'Không thể đặt vé. Vui lòng thử lại.');
+      await fetchSeats(selectedTrip.id);
+      setSelectedSeatIds([]);
     } finally {
       setBooking(false);
     }
   };
   const changeTrip = (direction: number) => {
     if (!trips.length) return;
+    setLoadedTripId(null);
     setActiveTripIndex(index => (index + direction + trips.length) % trips.length);
   };
 
@@ -237,11 +275,11 @@ export function AdminBookingScreen() {
         <View style={styles.tripPanel}>
           <Text style={styles.routeText}>{selectedTrip ? routeName(selectedTrip) : 'Chọn chuyến để đặt vé'}</Text>
           <View style={styles.dateRow}>
-            <Pressable onPress={() => setTravelDate(value => addDays(value, -1))} style={styles.dateArrow}>
+            <Pressable onPress={() => { setTrips([]); setLoadedTripId(null); setTravelDate(value => addDays(value, -1)); }} style={styles.dateArrow}>
               <Ionicons name="chevron-back" size={28} color={APP_COLORS.primaryDark} />
             </Pressable>
             <Text style={styles.dateText}>{formatDate(travelDate)}</Text>
-            <Pressable onPress={() => setTravelDate(value => addDays(value, 1))} style={styles.dateArrow}>
+            <Pressable onPress={() => { setTrips([]); setLoadedTripId(null); setTravelDate(value => addDays(value, 1)); }} style={styles.dateArrow}>
               <Ionicons name="chevron-forward" size={28} color={APP_COLORS.primaryDark} />
             </Pressable>
             <View style={styles.timeBox}><Text style={styles.timeText}>{selectedTrip ? formatTime(selectedTrip.departure_time) : '--:--'}</Text></View>
@@ -267,7 +305,7 @@ export function AdminBookingScreen() {
           </View>
 
           <View style={styles.actionRow}>
-            <Pressable style={styles.quickButton} onPress={() => openBooking()}>
+            <Pressable disabled={!seatsReady || stats.available === 0} style={styles.quickButton} onPress={() => openBooking()}>
               <Ionicons name="add" size={25} color={APP_COLORS.surface} />
               <Text style={styles.quickButtonText}>Đặt vé nhanh</Text>
             </Pressable>
@@ -285,16 +323,24 @@ export function AdminBookingScreen() {
             <Pressable onPress={() => changeTrip(1)} hitSlop={8}><Ionicons name="chevron-forward" size={21} color={APP_COLORS.primaryDark} /></Pressable>
           </View>
 
+          {!seatsReady && !error ? <ActivityIndicator color={APP_COLORS.primaryDark} /> : null}
           <View style={styles.seatMap}>
             <View style={styles.driver}><Text style={styles.driverText}>TÀI XẾ</Text></View>
             {sortedSeats.map(seat => (
-              <Pressable key={seat.id} style={[styles.seat, { borderColor: seatColor(seat.state) }]} onPress={() => openBooking(seat)}>
+              <Pressable disabled={seat.state !== 'available'} key={seat.id} style={[styles.seat, { borderColor: seatColor(seat.state) }]} onPress={() => openBooking(seat)}>
                 <Text style={[styles.seatLabel, { color: seatColor(seat.state) }]}>{seat.name}</Text>
-                <Text style={styles.seatPrice}>{formatMoney(ticketPrice(seat, selectedTrip))}</Text>
+                <Text style={styles.seatPrice}>{seat.state === 'booked' || seat.state === 'occupied' ? 'Đã đặt' : seat.state === 'blocked' ? 'Đã khóa' : formatMoney(ticketPrice(seat, selectedTrip))}</Text>
               </Pressable>
             ))}
             <View style={styles.driver}><Text style={styles.driverText}>GHẾ PHỤ</Text></View>
           </View>
+          {tripTickets.length > 0 ? <View style={styles.summaryCard}>
+            <Text style={styles.summaryValue}>Vé đã đặt · {formatTime(selectedTrip.departure_time)}</Text>
+            {tripTickets.map(ticket => <View key={ticket.id} style={styles.bookedTicket}>
+              <Text style={styles.summaryText}>{ticket.passenger_name} · {ticket.name}</Text>
+              <Text style={styles.seatPrice}>Đã đặt · {ticket.seat_name || (Array.isArray(ticket.seat_id) ? ticket.seat_id[1] : '') || 'Chưa xếp ghế'}</Text>
+            </View>)}
+          </View> : null}
         </> : null}
       </ScrollView>
       <Modal visible={bookingVisible} transparent animationType="slide" onRequestClose={() => setBookingVisible(false)}>
@@ -362,6 +408,7 @@ const styles = StyleSheet.create({
   quickButton: { minHeight: 48, borderRadius: 12, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: APP_COLORS.primaryDark }, quickButtonText: { color: APP_COLORS.surface, fontSize: 16, fontWeight: '700' },
   viewButtons: { flexDirection: 'row', gap: 7 }, viewButton: { width: 39, height: 39, borderWidth: 1, borderColor: APP_COLORS.border, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: APP_COLORS.surface }, viewButtonActive: { backgroundColor: APP_COLORS.primaryLight }, refreshButton: { backgroundColor: APP_COLORS.primaryDark, borderColor: APP_COLORS.primaryDark },
   vehicleBar: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, vehicleText: { flex: 1, marginHorizontal: 10, color: APP_COLORS.textSecondary, fontSize: 14, textAlign: 'center', fontWeight: '600' },
+  bookedTicket: { marginTop: 10 },
   seatMap: { marginTop: 12, alignSelf: 'center', width: '84%', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' },
   driver: { width: '30%', aspectRatio: 1, borderRadius: 10, backgroundColor: '#d8e4e3', alignItems: 'center', justifyContent: 'center' }, driverText: { color: APP_COLORS.textPrimary, fontSize: 13, fontWeight: '800' },
   seat: { width: '30%', aspectRatio: 1, borderWidth: 2, borderRadius: 10, backgroundColor: APP_COLORS.surface, alignItems: 'center', justifyContent: 'center' }, seatLabel: { fontSize: 20, fontWeight: '800' }, seatPrice: { marginTop: 3, fontSize: 10, color: APP_COLORS.textSecondary, fontWeight: '600' },

@@ -17,6 +17,7 @@ import { useAppSelector } from '../store/hooks';
 import { APP_COLORS } from '../theme/colors';
 import { RootStackParamList } from '../types/navigation';
 import { AdminReportsScreen } from '../screens/main/AdminReportsScreen';
+import { AdminTripPassengersScreen } from '../screens/main/AdminTripPassengersScreen';
 import { MainTabs } from './MainTabs';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -91,6 +92,7 @@ export function RootNavigator() {
             options={{ headerShown: false }}
           />
           {isAdmin && <Stack.Screen name="AdminReports" component={AdminReportsScreen} options={{ title: 'Thống kê báo cáo' }} />}
+          {isAdmin && <Stack.Screen name="AdminTripPassengers" component={AdminTripPassengersScreen} options={{ title: 'Hành khách & vé' }} />}
           <Stack.Screen name="DriverTripCompletion" component={DriverTripCompletionScreen} options={{ title: 'Xác nhận doanh thu' }} />
           <Stack.Screen name="FleetManagement" component={FleetManagementScreen} options={{ title: 'Điều hành xe trung chuyển' }} />
           <Stack.Screen name="DriverManagement" component={DriverManagementScreen} options={{ title: 'Quản lý nhân sự' }} />
