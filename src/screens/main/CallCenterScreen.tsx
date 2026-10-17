@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
@@ -63,6 +63,14 @@ function formatDateTime(value: string) {
 
 export function CallCenterScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const [calls, setCalls] = useState<{id: number; phone: string; customer_name: string; returning_customer: boolean; time: string; direction: string}[]>([]);
+  const [callsError, setCallsError] = useState('');
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    const load = async () => { try { const data = await requestJson<{results: typeof calls}>('/api/nhaxe/recent-calls/', {method: 'GET', auth: true}); if (active) { setCalls(data.results); setCallsError(''); } } catch { if (active) setCallsError('Không tải được lịch sử cuộc gọi.'); } };
+    load(); const timer = setInterval(load, 15000);
+    return () => { active = false; clearInterval(timer); };
+  }, []));
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -168,8 +176,12 @@ export function CallCenterScreen() {
 
   const openTicketBookingScreen = () => {
     const knownPhone = result?.phone || phone;
+    const previous = result?.passenger_bookings.find(ticket => ticket.status !== 'cancelled');
     navigation.navigate('TicketBooking', {
       initialPhone: knownPhone.trim(),
+      initialPassengerName: previous?.passenger_name,
+      initialPickup: previous?.pickup_location,
+      initialDropoff: previous?.dropoff_location,
     });
   };
 
@@ -264,7 +276,7 @@ export function CallCenterScreen() {
             ) : (
               result.passenger_bookings.map(item => (
                 <View key={`passenger-${item.id}`} style={styles.itemCard}>
-                  <Text style={styles.itemTitle}>{item.booking_code}</Text>
+                  <Pressable accessibilityRole="button" onPress={() => navigation.navigate('TicketBooking', { initialPhone: item.passenger_phone, initialPassengerName: item.passenger_name, initialPickup: item.pickup_location, initialDropoff: item.dropoff_location })}><Text style={styles.itemTitle}>{item.booking_code} · Đặt lại từ vé này →</Text></Pressable>
                   <Text style={styles.itemMeta}>
                     Khách: {item.passenger_name}
                   </Text>
@@ -349,8 +361,15 @@ export function CallCenterScreen() {
             onRefresh={onRefresh}
             tintColor={APP_COLORS.primaryDark}
           />
+
+
         }
       >
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Cuộc gọi gần đây · Khách cũ</Text>
+          {callsError ? <Text>{callsError}</Text> : null}
+          {calls.map(call => <Pressable key={call.id} style={styles.itemCard} onPress={async () => { setPhone(call.phone); setLoading(true); setError(null); try { await fetchLookup(call.phone); } catch { setError('Không tải được thông tin khách.'); } finally { setLoading(false); } }}><Text style={styles.itemTitle}>{call.phone} {call.returning_customer ? `· Khách cũ: ${call.customer_name}` : ''}</Text><Text>{call.direction} · {formatDateTime(call.time)}</Text><Text>Xem vé cũ / điểm đón trả →</Text></Pressable>)}
+        </View>
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionIconWrap}>

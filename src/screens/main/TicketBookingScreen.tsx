@@ -24,6 +24,7 @@ import { ScreenContainer } from '../../components/ScreenContainer';
 import { useToast } from '../../components/Toast';
 import { requestJson } from '../../services/apiClient';
 import { useAppSelector } from '../../store/hooks';
+import { CustomerHistory } from '../../components/CustomerHistory';
 import { APP_COLORS } from '../../theme/colors';
 import { RootStackParamList } from '../../types/navigation';
 import { getLinkedPhoneNumber } from '../../utils/userPhone';
@@ -330,6 +331,12 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   const [passengerPhone, setPassengerPhone] = useState(
     initialPhone || linkedPhone,
   );
+  const staffBooking = Boolean(user?.is_staff || ['admin', 'operator'].includes(user?.role || user?.user_role?.role || ''));
+  const [price, setPrice] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer'>('cash');
+  const [pickup, setPickup] = useState(route.params?.initialPickup || '');
+  const [dropoff, setDropoff] = useState(route.params?.initialDropoff || '');
+  useEffect(() => { setPrice(''); }, [selectedTrip?.id]);
   const [passengerIdNumber, setPassengerIdNumber] = useState('');
   const [selectedNoteSuggestions, setSelectedNoteSuggestions] = useState<string[]>([]);
   const [customNote, setCustomNote] = useState('');
@@ -577,7 +584,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
   const selectedTripForSummary = tripDetail || selectedTrip;
   const selectedSeatNames = selectedSeats.map(seat => seat.name).join(', ');
   const selectedSeatTotal = selectedSeats.reduce(
-    (total, seat) => total + getSeatPrice(seat, selectedTripForSummary),
+    (total, seat) => total + (staffBooking && price !== '' ? Number(price) : getSeatPrice(seat, selectedTripForSummary)),
     0,
   );
   const selectedSeatPriceLines = selectedSeats
@@ -635,6 +642,7 @@ export function TicketBookingScreen({ route, navigation }: Props) {
       return;
     }
 
+    if (staffBooking && price !== '' && (!/^\d+$/.test(price) || Number(price) > 999999999999)) { setDetailError('Giá vé phải là số nguyên không âm, tối đa 12 chữ số.'); return; }
     setBooking(true);
     setDetailError(null);
 
@@ -650,6 +658,10 @@ export function TicketBookingScreen({ route, navigation }: Props) {
         passenger_phone: passengerPhone.trim(),
         ...(passengerId ? { passenger_id_number: passengerId } : {}),
         create_partner: true,
+        ...(staffBooking && price !== '' ? { price: Number(price) } : {}),
+        payment_method: paymentMethod,
+        pickup_location: pickup.trim(),
+        dropoff_location: dropoff.trim(),
         note: [...selectedNoteSuggestions, customNote.trim()]
           .filter(Boolean)
           .join('. '),
@@ -941,6 +953,15 @@ export function TicketBookingScreen({ route, navigation }: Props) {
               </View>
             </View>
             <View style={styles.formGroup}>
+              {staffBooking ? <>
+                <CustomerHistory phone={passengerPhone} onSelect={ticket => { setPassengerName(ticket.passenger_name); setPickup(ticket.pickup_location); setDropoff(ticket.dropoff_location); }} />
+                <Text style={styles.label}>Giá mỗi vé (VNĐ)</Text>
+                <TextInput value={price} onChangeText={setPrice} keyboardType="number-pad" placeholder="Để trống: dùng giá ghế / tuyến" style={styles.input} />
+              </> : null}
+              <Text style={styles.label}>Phương thức thanh toán</Text>
+              {(['cash', 'transfer'] as const).map(method => <Pressable key={method} accessibilityRole="radio" accessibilityState={{ checked: paymentMethod === method }} onPress={() => setPaymentMethod(method)} style={styles.input}><Text>{paymentMethod === method ? '● ' : '○ '}{method === 'cash' ? 'Tiền mặt' : 'Chuyển khoản'}</Text></Pressable>)}
+              <Text style={styles.label}>Điểm đón</Text><TextInput value={pickup} onChangeText={setPickup} style={styles.input} />
+              <Text style={styles.label}>Điểm trả</Text><TextInput value={dropoff} onChangeText={setDropoff} style={styles.input} />
               <Text style={styles.label}>Ghi chú</Text>
               <View style={styles.noteSuggestions}>
                 {NOTE_SUGGESTIONS.map(suggestion => {

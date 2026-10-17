@@ -706,13 +706,13 @@ export function DriverTripsScreen() {
                     <View style={styles.pickupRowMain}>
                       <View style={styles.pickupInfo}>
                         <Text style={styles.pickupLocation}>
-                          {passenger.pickup_location || 'Chưa cập nhật điểm đón'}
+                          Điểm đón: {passenger.pickup_location || 'Chưa cập nhật điểm đón'}
                         </Text>
-                        {detailTab === 'picked' ? (
+                        {(
                           <Text style={styles.dropoffLocation}>
                             Điểm trả: {passenger.dropoff_location || 'Chưa cập nhật điểm trả'}
                           </Text>
-                        ) : null}
+                        )}
                         <Pressable onPress={() => callPassenger(phone)}>
                           <Text style={styles.phoneNumber}>{phone}</Text>
                         </Pressable>
@@ -771,7 +771,7 @@ export function DriverTripsScreen() {
                       <Text style={styles.paymentButtonText}>
                         {passenger.payment_method === 'transfer'
                           ? 'Chuyển khoản'
-                          : 'Chọn thanh toán'}
+                          : passenger.payment_method === 'cash' ? 'Tiền mặt' : 'Chọn thanh toán'}
                         </Text>
                     </Pressable>
                   </View>
@@ -1259,14 +1259,20 @@ const styles = StyleSheet.create({
   pickupRowMain: { flexDirection: 'row', alignItems: 'center' },
   pickupInfo: { flex: 1, paddingRight: 10 },
   pickupLocation: {
-    color: '#f23d72',
+    color: '#171700',
+    backgroundColor: '#ffeb00',
+    padding: 6,
+    borderRadius: 5,
     fontSize: 18,
     lineHeight: 23,
     fontWeight: '700',
   },
   dropoffLocation: {
     marginTop: 4,
-    color: APP_COLORS.info,
+    color: '#171700',
+    backgroundColor: '#ffeb00',
+    padding: 6,
+    borderRadius: 5,
     fontSize: 16,
     lineHeight: 22,
     fontWeight: '600',

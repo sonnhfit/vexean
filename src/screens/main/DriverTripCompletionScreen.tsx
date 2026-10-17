@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -175,6 +176,7 @@ export function DriverTripCompletionScreen({
           <>
             <View style={styles.card}>
               <Text style={styles.heading}>{report.name}</Text>
+              <Pressable style={styles.button} onPress={async () => { try { await Share.share({ message: [report.name, report.route_name, `Xe: ${report.vehicle_name} · Tài xế: ${report.driver_name}`, ...Object.entries(labels).map(([key, label]) => `${label}: ${money(report.totals[key])}`), '', ...report.lines.map(line => `${line.code} · ${line.name} · ${money(line.amount)} · ${paymentMethod[line.payment_method] || line.payment_method} · ${paymentStatus[line.payment_status] || line.payment_status}`)].join('\n') }); } catch { setError('Không thể chia sẻ báo cáo. Vui lòng thử lại.'); } }}><Text style={styles.buttonText}>Xuất / chia sẻ báo cáo thu tiền</Text></Pressable>
               <Text style={styles.body}>{report.route_name}</Text>
               <Text style={styles.hint}>
                 Xe: {report.vehicle_name || 'Chưa phân xe'} · Tài xế:{' '}

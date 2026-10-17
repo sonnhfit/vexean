@@ -16,6 +16,7 @@ import Ionicons from '@react-native-vector-icons/ionicons';
 import { AppTextInput as TextInput } from '../../components/AppTextInput';
 import { useToast } from '../../components/Toast';
 import { requestJson } from '../../services/apiClient';
+import { CustomerHistory } from '../../components/CustomerHistory';
 import { APP_COLORS } from '../../theme/colors';
 
 type OdooRelation = false | [number, string];
@@ -43,7 +44,7 @@ type Seat = {
   price?: number | string;
 };
 type TripsResponse = { results?: Trip[] };
-type Ticket = { id: number; name: string; passenger_name: string; seat_name?: string; seat_id?: OdooRelation; state: string };
+type Ticket = { id: number; name: string; passenger_name: string; seat_name?: string; seat_id?: OdooRelation; state: string; payment_method?: string; pickup_location?: string; dropoff_location?: string };
 type SeatsResponse = Seat[] | { results?: Seat[]; seats?: Seat[]; tickets?: Ticket[] };
 type BookingResponse = { total_tickets?: number; tickets?: { name?: string }[] };
 
@@ -128,6 +129,10 @@ export function AdminBookingScreen() {
   const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([]);
   const [passengerName, setPassengerName] = useState('');
   const [passengerPhone, setPassengerPhone] = useState('');
+  const [price, setPrice] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer'>('cash');
+  const [pickup, setPickup] = useState('');
+  const [dropoff, setDropoff] = useState('');
   const [note, setNote] = useState('Khách đặt tại quầy');
   const [booking, setBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
@@ -214,12 +219,14 @@ export function AdminBookingScreen() {
     [seats, selectedSeatIds],
   );
   const selectedTotal = useMemo(
-    () => selectedBookingSeats.reduce((total, seat) => total + ticketPrice(seat, selectedTrip), 0),
-    [selectedBookingSeats, selectedTrip],
+    () => selectedBookingSeats.reduce((total, seat) => total + (price === '' ? ticketPrice(seat, selectedTrip) : Number(price)), 0),
+    [selectedBookingSeats, selectedTrip, price],
   );
   const openBooking = (seat?: Seat) => {
     if (!selectedTrip || !seatsReady || (seat && seat.state !== 'available')) return;
     setBookingError(null);
+    setPrice('');
+    setPaymentMethod('cash');
     setSelectedSeatIds(seat?.state === 'available' ? [seat.id] : []);
     setBookingVisible(true);
   };
@@ -232,6 +239,9 @@ export function AdminBookingScreen() {
       setBookingError('Vui lòng chọn ít nhất một ghế trống.');
       return;
     }
+    if (price !== '' && (!/^\d+$/.test(price) || Number(price) > 999999999999)) {
+      setBookingError('Giá vé phải là số nguyên không âm, tối đa 12 chữ số.'); return;
+    }
     setBooking(true);
     setBookingError(null);
     try {
@@ -243,6 +253,10 @@ export function AdminBookingScreen() {
           passenger_name: passengerName.trim() || 'Khách lẻ',
           passenger_phone: passengerPhone.trim(),
           create_partner: true,
+          ...(price !== '' ? { price: Number(price) } : {}),
+          payment_method: paymentMethod,
+          pickup_location: pickup.trim(),
+          dropoff_location: dropoff.trim(),
           note: note.trim(),
         },
         logLabel: 'admin-book-ticket',
@@ -338,6 +352,8 @@ export function AdminBookingScreen() {
             <Text style={styles.summaryValue}>Vé đã đặt · {formatTime(selectedTrip.departure_time)}</Text>
             {tripTickets.map(ticket => <View key={ticket.id} style={styles.bookedTicket}>
               <Text style={styles.summaryText}>{ticket.passenger_name} · {ticket.name}</Text>
+              <Text style={styles.summaryText}>{ticket.payment_method === 'cash' ? 'Tiền mặt' : ticket.payment_method === 'transfer' ? 'Chuyển khoản' : 'Chưa chọn thanh toán'}</Text>
+              <Text style={styles.stop}>Đón: {ticket.pickup_location || '—'} · Trả: {ticket.dropoff_location || '—'}</Text>
               <Text style={styles.seatPrice}>Đã đặt · {ticket.seat_name || (Array.isArray(ticket.seat_id) ? ticket.seat_id[1] : '') || 'Chưa xếp ghế'}</Text>
             </View>)}
           </View> : null}
@@ -362,6 +378,13 @@ export function AdminBookingScreen() {
               <Text style={styles.modalLabel}>Thông tin khách</Text>
               <TextInput value={passengerName} onChangeText={setPassengerName} placeholder="Tên khách (có thể bỏ trống)" placeholderTextColor={APP_COLORS.placeholder} style={styles.input} />
               <TextInput value={passengerPhone} onChangeText={setPassengerPhone} placeholder="Số điện thoại" placeholderTextColor={APP_COLORS.placeholder} keyboardType="phone-pad" style={styles.input} />
+              <CustomerHistory phone={passengerPhone} onSelect={ticket => { setPassengerName(ticket.passenger_name); setPickup(ticket.pickup_location); setDropoff(ticket.dropoff_location); }} />
+              <Text style={styles.modalLabel}>Giá mỗi vé (VNĐ)</Text>
+              <TextInput value={price} onChangeText={setPrice} keyboardType="number-pad" placeholder="Để trống: dùng giá ghế / tuyến" style={styles.input} />
+              <Text style={styles.modalLabel}>Phương thức thanh toán</Text>
+              <View style={styles.quickNoteList}>{(['cash', 'transfer'] as const).map(method => <Pressable key={method} accessibilityRole="radio" accessibilityState={{ checked: paymentMethod === method }} onPress={() => setPaymentMethod(method)} style={[styles.quickNote, paymentMethod === method && styles.quickNoteSelected]}><Text style={styles.quickNoteText}>{paymentMethod === method ? '● ' : '○ '}{method === 'cash' ? 'Tiền mặt' : 'Chuyển khoản'}</Text></Pressable>)}</View>
+              <Text style={styles.modalLabel}>Điểm đón</Text><TextInput value={pickup} onChangeText={setPickup} style={styles.input} />
+              <Text style={styles.modalLabel}>Điểm trả</Text><TextInput value={dropoff} onChangeText={setDropoff} style={styles.input} />
               <Text style={styles.modalLabel}>Ghi chú</Text>
               <View style={styles.quickNoteList}>
                 {QUICK_NOTES.map(quickNote => {
@@ -408,6 +431,7 @@ const styles = StyleSheet.create({
   quickButton: { minHeight: 48, borderRadius: 12, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: APP_COLORS.primaryDark }, quickButtonText: { color: APP_COLORS.surface, fontSize: 16, fontWeight: '700' },
   viewButtons: { flexDirection: 'row', gap: 7 }, viewButton: { width: 39, height: 39, borderWidth: 1, borderColor: APP_COLORS.border, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: APP_COLORS.surface }, viewButtonActive: { backgroundColor: APP_COLORS.primaryLight }, refreshButton: { backgroundColor: APP_COLORS.primaryDark, borderColor: APP_COLORS.primaryDark },
   vehicleBar: { marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, vehicleText: { flex: 1, marginHorizontal: 10, color: APP_COLORS.textSecondary, fontSize: 14, textAlign: 'center', fontWeight: '600' },
+  stop: { backgroundColor: '#ffeb00', color: '#171700', fontWeight: '700', padding: 6, borderRadius: 5, marginTop: 4 },
   bookedTicket: { marginTop: 10 },
   seatMap: { marginTop: 12, alignSelf: 'center', width: '84%', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' },
   driver: { width: '30%', aspectRatio: 1, borderRadius: 10, backgroundColor: '#d8e4e3', alignItems: 'center', justifyContent: 'center' }, driverText: { color: APP_COLORS.textPrimary, fontSize: 13, fontWeight: '800' },

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, Share, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { RouteProp, useFocusEffect, useRoute } from '@react-navigation/native';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS as C } from '../../theme/colors';
@@ -13,6 +13,7 @@ type Ticket = {
   seat_name?: string;
   total_amount?: number | string;
   payment_status?: string;
+  payment_method?: string;
   state?: string;
   pickup_location?: string;
   dropoff_location?: string;
@@ -65,6 +66,10 @@ export function AdminTripPassengersScreen() {
 
   const active = tickets.filter(t => t.state !== 'cancelled');
 
+  const collected = (method: string) => active.filter(ticket => ticket.payment_status === 'paid' && ticket.payment_method === method).reduce((sum, ticket) => sum + Number(ticket.total_amount || 0), 0);
+  const unpaid = active.filter(ticket => ['pending', 'unpaid', 'not_paid'].includes(ticket.payment_status || '')).reduce((sum, ticket) => sum + Number(ticket.total_amount || 0), 0);
+  const methodLabel = (method?: string) => method === 'cash' ? 'Tiền mặt' : method === 'transfer' ? 'Chuyển khoản' : 'Chưa xác định';
+  const collectionSummary = `Đã thu tiền mặt: ${money(collected('cash'))} · Đã thu chuyển khoản: ${money(collected('transfer'))} · Chưa thu: ${money(unpaid)}`;
   return (
     <FlatList
       style={styles.list}
@@ -78,6 +83,9 @@ export function AdminTripPassengersScreen() {
           <Text style={styles.meta}>{formatTime(params.departureTime)} · {params.vehicleName}</Text>
           <Text style={styles.meta}>Tài xế: {params.driverName}</Text>
           <Text style={styles.count}>{active.length} vé hợp lệ / {tickets.length} vé</Text>
+          <Text style={styles.meta}>{collectionSummary}</Text>
+          {error ? <Text style={styles.empty}>{error}</Text> : null}
+          <Pressable disabled={loading || Boolean(error)} onPress={async () => { try { await Share.share({ message: [params.routeName, `Tài xế: ${params.driverName}`, collectionSummary, ...active.map(ticket => `${ticket.name} · ${ticket.passenger_name} · ${ticket.passenger_phone} · Đón: ${ticket.pickup_location || '—'} · Trả: ${ticket.dropoff_location || '—'} · ${money(ticket.total_amount)} · ${methodLabel(ticket.payment_method)} · ${ticket.payment_status === 'paid' ? 'Đã thu' : ticket.payment_status === 'refunded' ? 'Đã hoàn tiền' : 'Chưa thu'}`)].join('\n') }); } catch { setError('Không thể chia sẻ danh sách.'); } }}><Text style={styles.count}>Xuất / chia sẻ danh sách và thu tiền</Text></Pressable>
         </View>
       }
       ListEmptyComponent={
@@ -94,9 +102,9 @@ export function AdminTripPassengersScreen() {
             </Text>
           </View>
           <Text style={styles.meta}>{item.passenger_phone} · Ghế {item.seat_name || '—'} · {item.name}</Text>
-          {item.pickup_location ? <Text style={styles.meta}>Đón: {item.pickup_location}</Text> : null}
-          {item.dropoff_location ? <Text style={styles.meta}>Trả: {item.dropoff_location}</Text> : null}
-          <Text style={styles.meta}>{money(item.total_amount)} · {item.payment_status}</Text>
+          {item.pickup_location ? <Text style={styles.stop}>Đón: {item.pickup_location}</Text> : null}
+          {item.dropoff_location ? <Text style={styles.stop}>Trả: {item.dropoff_location}</Text> : null}
+          <Text style={styles.meta}>{money(item.total_amount)} · {methodLabel(item.payment_method)} · {item.payment_status === 'paid' ? 'Đã thu' : item.payment_status === 'refunded' ? 'Đã hoàn tiền' : 'Chưa thu'}</Text>
         </View>
       )}
     />
@@ -113,6 +121,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
   name: { fontSize: 16, fontWeight: '600', color: C.textPrimary, flexShrink: 1 },
   badge: { fontWeight: '600', color: C.primaryDark },
+  stop: { backgroundColor: '#ffeb00', color: '#171700', fontSize: 17, fontWeight: '700', padding: 6, borderRadius: 5 },
   meta: { color: C.textSecondary },
   center: { marginTop: 40 },
   empty: { textAlign: 'center', marginTop: 40, color: C.placeholder },

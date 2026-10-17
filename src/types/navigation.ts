@@ -41,6 +41,8 @@ export type RootStackParamList = {
   TicketBooking: {
     initialPhone?: string;
     initialPassengerName?: string;
+    initialPickup?: string;
+    initialDropoff?: string;
     initialTripId?: number;
     initialTravelDate?: string;
   } | undefined;
