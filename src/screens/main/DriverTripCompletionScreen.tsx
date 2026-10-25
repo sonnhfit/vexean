@@ -12,6 +12,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { usePreventRemove } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@react-native-vector-icons/ionicons';
+import { paymentStatusColor, settlementColor } from '../../utils/paymentColors';
+import { passengerPaymentSummary } from '../../utils/passengerPayments';
 import { ApiError, requestJson } from '../../services/apiClient';
 import { RootStackParamList } from '../../types/navigation';
 import { APP_COLORS as C } from '../../theme/colors';
@@ -49,6 +51,9 @@ const money = (value?: string) =>
   `${Number(value || 0).toLocaleString('vi-VN')} đ`;
 const paymentStatus: Record<string, string> = {
   paid: 'Đã thu',
+  completed: 'Đã thu',
+  unpaid: 'Chưa thu',
+  not_paid: 'Chưa thu',
   pending: 'Chưa thu',
   refunded: 'Đã hoàn tiền',
 };
@@ -176,7 +181,7 @@ export function DriverTripCompletionScreen({
           <>
             <View style={styles.card}>
               <Text style={styles.heading}>{report.name}</Text>
-              <Pressable style={styles.button} onPress={async () => { try { await Share.share({ message: [report.name, report.route_name, `Xe: ${report.vehicle_name} · Tài xế: ${report.driver_name}`, ...Object.entries(labels).map(([key, label]) => `${label}: ${money(report.totals[key])}`), '', ...report.lines.map(line => `${line.code} · ${line.name} · ${money(line.amount)} · ${paymentMethod[line.payment_method] || line.payment_method} · ${paymentStatus[line.payment_status] || line.payment_status}`)].join('\n') }); } catch { setError('Không thể chia sẻ báo cáo. Vui lòng thử lại.'); } }}><Text style={styles.buttonText}>Xuất / chia sẻ báo cáo thu tiền</Text></Pressable>
+              <Pressable style={styles.button} onPress={async () => { try { await Share.share({ message: [report.name, report.route_name, `Xe: ${report.vehicle_name} · Tài xế: ${report.driver_name}`, ...passengerPaymentSummary(report.lines), ...Object.entries(labels).map(([key, label]) => `${label}: ${money(report.totals[key])}`), '', ...report.lines.map(line => `${line.code} · ${line.name} · ${money(line.amount)} · ${paymentMethod[line.payment_method] || line.payment_method} · ${paymentStatus[line.payment_status] || line.payment_status}`)].join('\n') }); } catch { setError('Không thể chia sẻ báo cáo. Vui lòng thử lại.'); } }}><Text style={styles.buttonText}>Xuất / chia sẻ báo cáo thu tiền</Text></Pressable>
               <Text style={styles.body}>{report.route_name}</Text>
               <Text style={styles.hint}>
                 Xe: {report.vehicle_name || 'Chưa phân xe'} · Tài xế:{' '}
@@ -192,10 +197,15 @@ export function DriverTripCompletionScreen({
               </Text>
             </View>
             <View style={styles.card}>
+              <Text style={styles.heading}>Tổng tiền vé theo phương thức</Text>
+              {passengerPaymentSummary(report.lines).map(summary => (
+                <Text key={summary} style={styles.body}>{summary}</Text>
+              ))}
+              <Text style={styles.hint}>Tổng tiền vé gồm cả vé chưa thu, không gồm vé đã hoàn tiền. Số tiền thực thu được liệt kê bên dưới.</Text>
               {Object.entries(labels).map(([key, label]) => (
                 <View style={styles.row} key={key}>
-                  <Text style={styles.rowLabel}>{label}</Text>
-                  <Text style={styles.rowValue}>
+                  <Text style={[styles.rowLabel, { color: settlementColor(key), fontWeight: '700' }]}>{label}</Text>
+                  <Text style={[styles.rowValue, { color: settlementColor(key) }]}>
                     {money(report.totals[key])}
                   </Text>
                 </View>
@@ -233,8 +243,9 @@ export function DriverTripCompletionScreen({
                       {paymentMethod[line.payment_method] ||
                         'Chưa rõ phương thức'}{' '}
                       ·{' '}
-                      {paymentStatus[line.payment_status] ||
-                        'Chưa xác định thanh toán'}
+                      <Text style={{ color: paymentStatusColor(line.payment_status), fontWeight: '700' }}>
+                        {paymentStatus[line.payment_status] || 'Chưa xác định thanh toán'}
+                      </Text>
                     </Text>
                     {Number(line.cod) > 0 ? (
                       <Text style={styles.hint}>

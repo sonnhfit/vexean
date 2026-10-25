@@ -22,6 +22,8 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import Ionicons from '@react-native-vector-icons/ionicons';
+import { paymentStatusColor, settlementColor } from '../../utils/paymentColors';
+import { passengerPaymentSummary } from '../../utils/passengerPayments';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { requestJson } from '../../services/apiClient';
 import { APP_COLORS } from '../../theme/colors';
@@ -36,7 +38,7 @@ type Settlement = {
   route_name: string;
   vehicle_name: string;
   totals: Record<string, string>;
-  lines: {kind: string; code: string; name: string; amount: string; payment_status: string}[];
+  lines: {kind: string; code: string; name: string; amount: string; payment_method?: string; payment_status: string}[];
 };
 
 const SETTLEMENT_LABELS: Record<string, string> = {
@@ -490,7 +492,7 @@ export function DriverTripsScreen() {
 
   const choosePaymentMethod = async (paymentMethod: 'cash' | 'transfer') => {
     const ticketId = paymentPassenger && passengerId(paymentPassenger);
-    if (!selectedTrip || !ticketId) {
+    if (!selectedTrip || !ticketId || paymentLoading || tripClosed) {
       return;
     }
     setPaymentLoading(true);
@@ -498,7 +500,7 @@ export function DriverTripsScreen() {
     setQrPayment(null);
     try {
       const data = await requestJson<PaymentResponse>(
-        `/api/nhaxe/driver/me/trips/${selectedTrip.id}/passengers/${ticketId}/payment/`,
+        `/api/nhaxe/driver/me/trips/${selectedTrip.id}/passengers/${ticketId}/${paymentMethod === 'cash' ? 'confirm-cash' : 'payment'}/`,
         {
           method: 'POST',
           auth: true,
@@ -523,7 +525,28 @@ export function DriverTripsScreen() {
     }
   };
 
+  const confirmTransfer = async () => {
+    const ticketId = paymentPassenger && passengerId(paymentPassenger);
+    if (!selectedTrip || !ticketId || paymentLoading || tripClosed) return;
+    setPaymentLoading(true);
+    setPaymentError(null);
+    try {
+      await requestJson<unknown>(
+        `/api/nhaxe/driver/me/trips/${selectedTrip.id}/passengers/${ticketId}/confirm-transfer/`,
+        { method: 'POST', auth: true, logLabel: 'driver-confirm-transfer' },
+      );
+      setPaymentPassenger(null);
+      setQrPayment(null);
+      await loadTripDetail(selectedTrip.id);
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : 'Không xác nhận được chuyển khoản. Vui lòng thử lại.');
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
   const closePayment = () => {
+    if (paymentLoading) return;
     setPaymentPassenger(null);
     setPaymentError(null);
     setQrPayment(null);
@@ -611,7 +634,7 @@ export function DriverTripsScreen() {
 
   if (selectedTrip) {
     const activePassengers = passengers.filter(
-      passenger => passenger.state !== 'cancelled',
+      passenger => !['cancelled', 'cancel', 'canceled', 'completed'].includes(passenger.state || '') && !passenger.checkout_time,
     );
     const pickedUpCount =
       activePassengers.filter(
@@ -691,7 +714,7 @@ export function DriverTripsScreen() {
             {displayedPassengers.length === 0 ? (
               <Text style={styles.emptyText}>
                 {detailTab === 'picked'
-                  ? 'Chưa có hành khách nào đã đón.'
+                  ? 'Không còn hành khách đang chờ trả.'
                   : 'Không còn hành khách chờ đón.'}
               </Text>
             ) : (
@@ -706,13 +729,15 @@ export function DriverTripsScreen() {
                     <View style={styles.pickupRowMain}>
                       <View style={styles.pickupInfo}>
                         <Text style={styles.pickupLocation}>
-                          Điểm đón: {passenger.pickup_location || 'Chưa cập nhật điểm đón'}
+                          {detailTab === 'picked'
+                            ? `Điểm trả: ${passenger.dropoff_location || 'Chưa cập nhật điểm trả'}`
+                            : `Điểm đón: ${passenger.pickup_location || 'Chưa cập nhật điểm đón'}`}
                         </Text>
-                        {(
+                        {detailTab === 'picked' ? (
                           <Text style={styles.dropoffLocation}>
-                            Điểm trả: {passenger.dropoff_location || 'Chưa cập nhật điểm trả'}
+                            Điểm đón: {passenger.pickup_location || 'Chưa cập nhật điểm đón'}
                           </Text>
-                        )}
+                        ) : null}
                         <Pressable onPress={() => callPassenger(phone)}>
                           <Text style={styles.phoneNumber}>{phone}</Text>
                         </Pressable>
@@ -772,6 +797,7 @@ export function DriverTripsScreen() {
                         {passenger.payment_method === 'transfer'
                           ? 'Chuyển khoản'
                           : passenger.payment_method === 'cash' ? 'Tiền mặt' : 'Chọn thanh toán'}
+                        {passenger.payment_status === 'paid' ? ' · Đã thanh toán' : ''}
                         </Text>
                     </Pressable>
                   </View>
@@ -895,6 +921,14 @@ export function DriverTripsScreen() {
                   <Image source={{ uri: qrPayment.qr_code_url }} style={styles.qrImage} resizeMode="contain" />
                   <Text style={styles.qrHint}>Quét mã để chuyển khoản</Text>
                   <Text style={styles.transferNote}>Nội dung: {qrPayment.transfer_note}</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={paymentLoading || tripClosed}
+                    style={[styles.actionButton, (paymentLoading || tripClosed) && styles.disabled]}
+                    onPress={confirmTransfer}
+                  >
+                    <Text style={styles.pickupButtonText}>Đã chuyển khoản</Text>
+                  </Pressable>
                 </View>
               ) : (
                 <View style={styles.paymentOptions}>
@@ -904,7 +938,7 @@ export function DriverTripsScreen() {
                     onPress={() => choosePaymentMethod('cash')}
                   >
                     <Ionicons name="cash-outline" size={27} color={APP_COLORS.success} />
-                    <Text style={styles.paymentOptionText}>Tiền mặt</Text>
+                    <Text style={styles.paymentOptionText}>Đã thu tiền mặt</Text>
                   </Pressable>
                   <Pressable
                     disabled={paymentLoading}
@@ -1108,13 +1142,14 @@ function SettlementCard({report}: {report: Settlement}) {
     <Text style={styles.tripTitle}>{report.name} · Đã kết thúc</Text>
     <Text style={styles.infoText}>{report.route_name} · {report.vehicle_name}</Text>
     <Text style={styles.infoText}>{report.driver_name} · {formatDateTime(report.completed_at)}</Text>
+    {passengerPaymentSummary(report.lines).map(summary => <Text key={summary} style={styles.ticketLine}>{summary}</Text>)}
     {Object.entries(SETTLEMENT_LABELS).map(([key, label]) => <View key={key} style={styles.infoLine}>
-      <Text style={styles.infoText}>{label}</Text><Text style={styles.ticketLine}>{formatMoney(report.totals[key])}</Text>
+      <Text style={[styles.infoText, { color: settlementColor(key), fontWeight: '700' }]}>{label}</Text><Text style={[styles.ticketLine, { color: settlementColor(key) }]}>{formatMoney(report.totals[key])}</Text>
     </View>)}
     <Text style={styles.metaText}>Số liệu tại lúc đóng lệnh. Tiền mặt đã thu cần đối chiếu người thu trước khi xác định tiền tài xế phải nộp.</Text>
     <Pressable style={styles.paymentButton} onPress={() => setExpanded(value => !value)}><Text style={styles.paymentButtonText}>{expanded ? 'Thu gọn' : 'Xem bảng vé / hàng'}</Text></Pressable>
     {expanded && report.lines.map((line, index) => <View key={`${line.kind}-${line.code}-${index}`} style={styles.infoLine}>
-      <Text style={styles.infoText}>{line.code} · {line.name}{'\n'}{line.payment_status === 'paid' ? 'Đã thu' : line.payment_status === 'pending' ? 'Chưa thu' : line.payment_status === 'refunded' ? 'Đã hoàn tiền' : 'Chưa xác định'}</Text><Text style={styles.ticketLine}>{formatMoney(line.amount)}</Text>
+      <Text style={styles.infoText}>{line.code} · {line.name}{'\n'}<Text style={{ color: paymentStatusColor(line.payment_status), fontWeight: '700' }}>{['paid', 'completed'].includes(line.payment_status) ? 'Đã thu' : ['pending', 'unpaid', 'not_paid'].includes(line.payment_status) ? 'Chưa thu' : line.payment_status === 'refunded' ? 'Đã hoàn tiền' : 'Chưa xác định'}</Text></Text><Text style={styles.ticketLine}>{formatMoney(line.amount)}</Text>
     </View>)}
   </View>;
 }
