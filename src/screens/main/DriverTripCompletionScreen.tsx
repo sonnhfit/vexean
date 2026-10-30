@@ -1,3 +1,4 @@
+import { SequenceBadge } from '../../components/SequenceBadge';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -6,6 +7,7 @@ import {
   Share,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -75,6 +77,7 @@ export function DriverTripCompletionScreen({
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shareNote, setShareNote] = useState('');
   const submitting = useRef(false);
   const scroll = useRef<ScrollView>(null);
   const endpoint = `/api/nhaxe/driver/me/trips/${route.params.tripId}/complete/`;
@@ -135,10 +138,36 @@ export function DriverTripCompletionScreen({
       setSaving(false);
     }
   };
+  const shareReport = async () => {
+    if (!report) return;
+    const tickets = report.lines.filter(line => line.kind === 'ticket');
+    const cargo = report.lines.filter(line => line.kind !== 'ticket');
+    const formatLine = (line: Report['lines'][number], index: number) =>
+      `${index + 1}. ${line.code} · ${line.name} · ${money(line.amount)} · ${paymentMethod[line.payment_method] || line.payment_method} · ${paymentStatus[line.payment_status] || line.payment_status}`;
+    try {
+      await Share.share({
+        message: [
+          report.name,
+          report.route_name,
+          `Xe: ${report.vehicle_name} · Tài xế: ${report.driver_name}`,
+          ...passengerPaymentSummary(report.lines),
+          ...Object.entries(labels).map(
+            ([key, label]) => `${label}: ${money(report.totals[key])}`,
+          ),
+          ...(tickets.length ? ['', 'Danh sách khách:', ...tickets.map(formatLine)] : []),
+          ...(cargo.length ? ['', 'Danh sách hàng:', ...cargo.map(formatLine)] : []),
+          ...(shareNote.trim() ? ['', 'Ghi chú của lái xe:', shareNote.trim()] : []),
+        ].join('\n'),
+      });
+    } catch {
+      setError('Không thể chia sẻ báo cáo. Vui lòng thử lại.');
+    }
+  };
   return (
     <View style={styles.screen}>
       <ScrollView
         ref={scroll}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.content,
           { paddingBottom: Math.max(insets.bottom, 16) + 20 },
@@ -181,7 +210,20 @@ export function DriverTripCompletionScreen({
           <>
             <View style={styles.card}>
               <Text style={styles.heading}>{report.name}</Text>
-              <Pressable style={styles.button} onPress={async () => { try { await Share.share({ message: [report.name, report.route_name, `Xe: ${report.vehicle_name} · Tài xế: ${report.driver_name}`, ...passengerPaymentSummary(report.lines), ...Object.entries(labels).map(([key, label]) => `${label}: ${money(report.totals[key])}`), '', ...report.lines.map(line => `${line.code} · ${line.name} · ${money(line.amount)} · ${paymentMethod[line.payment_method] || line.payment_method} · ${paymentStatus[line.payment_status] || line.payment_status}`)].join('\n') }); } catch { setError('Không thể chia sẻ báo cáo. Vui lòng thử lại.'); } }}><Text style={styles.buttonText}>Xuất / chia sẻ báo cáo thu tiền</Text></Pressable>
+              <Text style={styles.body}>Ghi chú gửi kèm báo cáo</Text>
+              <TextInput
+                accessibilityLabel="Ghi chú gửi kèm báo cáo"
+                style={styles.noteInput}
+                value={shareNote}
+                onChangeText={setShareNote}
+                placeholder="Nhập nội dung lái xe cần trình bày (không bắt buộc)..."
+                placeholderTextColor={C.textSecondary}
+                multiline
+                textAlignVertical="top"
+              />
+              <Pressable style={styles.button} onPress={shareReport}>
+                <Text style={styles.buttonText}>Xuất / chia sẻ báo cáo thu tiền</Text>
+              </Pressable>
               <Text style={styles.body}>{report.route_name}</Text>
               <Text style={styles.hint}>
                 Xe: {report.vehicle_name || 'Chưa phân xe'} · Tài xế:{' '}
@@ -231,6 +273,7 @@ export function DriverTripCompletionScreen({
                     style={styles.line}
                   >
                     <View style={styles.row}>
+                      <SequenceBadge number={index + 1} />
                       <Text style={styles.rowLabel}>
                         {line.kind === 'ticket' ? 'Vé' : 'Hàng'} · {line.code}
                       </Text>
@@ -334,6 +377,16 @@ const styles = StyleSheet.create({
     gap: 12,
     borderWidth: 1,
     borderColor: C.border,
+  },
+  noteInput: {
+    minHeight: 100,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 15,
+    color: C.textPrimary,
+    backgroundColor: C.background,
   },
   revenue: {
     padding: 20,

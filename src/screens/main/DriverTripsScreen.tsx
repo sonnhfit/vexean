@@ -1,3 +1,4 @@
+import { SequenceBadge } from '../../components/SequenceBadge';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
@@ -727,6 +728,7 @@ export function DriverTripsScreen() {
                 const row = (
                   <View style={styles.pickupRow}>
                     <View style={styles.pickupRowMain}>
+                      <SequenceBadge number={passengers.indexOf(passenger) + 1} />
                       <View style={styles.pickupInfo}>
                         <Text style={styles.pickupLocation}>
                           {detailTab === 'picked'
@@ -1149,6 +1151,7 @@ function SettlementCard({report}: {report: Settlement}) {
     <Text style={styles.metaText}>Số liệu tại lúc đóng lệnh. Tiền mặt đã thu cần đối chiếu người thu trước khi xác định tiền tài xế phải nộp.</Text>
     <Pressable style={styles.paymentButton} onPress={() => setExpanded(value => !value)}><Text style={styles.paymentButtonText}>{expanded ? 'Thu gọn' : 'Xem bảng vé / hàng'}</Text></Pressable>
     {expanded && report.lines.map((line, index) => <View key={`${line.kind}-${line.code}-${index}`} style={styles.infoLine}>
+      <SequenceBadge number={index + 1} />
       <Text style={styles.infoText}>{line.code} · {line.name}{'\n'}<Text style={{ color: paymentStatusColor(line.payment_status), fontWeight: '700' }}>{['paid', 'completed'].includes(line.payment_status) ? 'Đã thu' : ['pending', 'unpaid', 'not_paid'].includes(line.payment_status) ? 'Chưa thu' : line.payment_status === 'refunded' ? 'Đã hoàn tiền' : 'Chưa xác định'}</Text></Text><Text style={styles.ticketLine}>{formatMoney(line.amount)}</Text>
     </View>)}
   </View>;
@@ -1291,7 +1294,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
-  pickupRowMain: { flexDirection: 'row', alignItems: 'center' },
+  pickupRowMain: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   pickupInfo: { flex: 1, paddingRight: 10 },
   pickupLocation: {
     color: '#171700',
